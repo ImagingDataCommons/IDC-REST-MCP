@@ -20,11 +20,13 @@ import logging
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 
 from ..core import schema as core_schema
 from ..core.context import AppContext
 from ..core.errors import IDCAPIError
 from ..core.models import CohortFilters, NumericRange
+from ..settings import get_settings
 
 logger = logging.getLogger("idc_api.mcp")
 
@@ -63,11 +65,31 @@ Cite data with get_citations and respect get_licenses (CC-BY vs CC-BY-NC)."""
 # elicitation, resource-change subscriptions, streamed partial progress). json_response=True
 # returns plain JSON instead of an SSE stream, which is the natural fit for stateless request/
 # response. These flags affect ONLY the HTTP transport; local stdio mode is unaffected.
+def _transport_security() -> TransportSecuritySettings:
+    """Configure the HTTP transport's DNS-rebinding (Host/Origin allow-list) protection.
+
+    The SDK defaults to allow-listing localhost only, so behind a hosted domain (Cloud Run) it
+    rejects requests with HTTP 421 ("Invalid Host header"). This service is public,
+    unauthenticated, and read-only, so we default the protection off (see settings). Operators
+    who want it on set IDC_API_MCP_DNS_REBINDING_PROTECTION=true plus IDC_API_MCP_ALLOWED_HOSTS
+    / _ALLOWED_ORIGINS for their domain.
+    """
+    s = get_settings()
+    if s.mcp_dns_rebinding_protection:
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=s.mcp_allowed_hosts,
+            allowed_origins=s.mcp_allowed_origins,
+        )
+    return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
 mcp = FastMCP(
     "IDC (Imaging Data Commons)",
     instructions=INSTRUCTIONS,
     stateless_http=True,
     json_response=True,
+    transport_security=_transport_security(),
 )
 ctx = AppContext()
 

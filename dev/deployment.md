@@ -126,7 +126,17 @@ gcloud run deploy idc-mcp-v3 \
   --set-env-vars IDC_API_DUCKDB_MEMORY_LIMIT=3GB,IDC_API_DUCKDB_THREADS=2
 ```
 
-The MCP endpoint is then `https://<service-url>/mcp`.
+The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
+
+> **Host-header / DNS-rebinding protection.** The MCP streamable-HTTP transport ships with
+> DNS-rebinding protection that allow-lists the `Host` header to localhost only, which would
+> reject a Cloud Run domain with **HTTP 421 "Invalid Host header."** Because this service is
+> public, unauthenticated, and read-only, that protection is **disabled by default**
+> (`mcp_dns_rebinding_protection=False`; see [settings.py](../src/idc_api/settings.py)), so the
+> hosted endpoint works out of the box. To re-enable it, set
+> `IDC_API_MCP_DNS_REBINDING_PROTECTION=true` and
+> `IDC_API_MCP_ALLOWED_HOSTS=["your-host"]` (JSON). If you still see a 421, you're running an
+> image built before this default — rebuild and redeploy.
 
 > **Stateless by design.** The MCP HTTP transport is configured stateless
 > (`stateless_http=True`, `json_response=True` in [mcp/server.py](../src/idc_api/mcp/server.py)),

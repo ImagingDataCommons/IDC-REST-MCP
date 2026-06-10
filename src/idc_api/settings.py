@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     # actually download files. Hosted REST / remote MCP keep this False (manifests only).
     enable_local_download: bool = False
 
+    # --- MCP HTTP transport security ---
+    # The MCP streamable-HTTP transport has DNS-rebinding protection that allow-lists the Host
+    # header (localhost-only by default), which rejects a hosted domain (e.g. Cloud Run) with
+    # HTTP 421. This service is public, unauthenticated, and read-only, so that protection adds
+    # nothing — default it off. To re-enable, set mcp_dns_rebinding_protection=true and list the
+    # serving host(s)/origin(s). Affects only the HTTP transport; stdio is unaffected.
+    mcp_dns_rebinding_protection: bool = False
+    mcp_allowed_hosts: list[str] = []
+    mcp_allowed_origins: list[str] = []
+
     # --- REST ---
     cors_allow_origins: list[str] = ["*"]
     host: str = "127.0.0.1"
