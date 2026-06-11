@@ -5,6 +5,7 @@ name: v3 CI
 # idc-index Parquet — no GCP, network, or credentials required.
 
 on:
+  workflow_dispatch:
   push:
     branches: [idc-api-v3]
     paths:
