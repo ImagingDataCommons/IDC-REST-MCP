@@ -22,10 +22,18 @@ IDC stores public cancer imaging as **DICOM**, organized as a hierarchy:
 
 ```
 Patient → Study → Series        (the DICOM hierarchy; `index` has one row per Series)
-   grouped by:
-     collection_id              a dataset, e.g. `nlst`, `tcga_luad`
-     analysis_result_id         derived annotations/segmentations layered on a collection
+   labelled by two independent grouping axes:
+     collection_id              the source dataset (e.g. `nlst`, `tcga_luad`); a patient
+                                belongs to exactly one collection
+     analysis_result_id         a derived dataset (segmentations/annotations/radiomics);
+                                a single analysis result can span *multiple* collections
 ```
+
+`collection_id` and `analysis_result_id` are **orthogonal** — an analysis result is *not*
+nested under one collection, so filtering by a `collection_id` will not necessarily capture all
+of an analysis result's series (and vice versa). Filter on whichever axis you actually mean.
+(`analysis_results_index` lists each result's source collections in its plural `collections`
+field.)
 
 The main queryable table is **`index`** — one row per **series**, the unit you filter, count,
 and download. IDC is large (~100+ TB total), so always check counts/size before downloading.
@@ -62,22 +70,69 @@ ready-to-use download payload (it reuses the **Retrieval** logic to build that p
 read-only `SELECT` against `index`. The side tools (viewer / citations / licenses) all operate
 on the *same* cohort filters.
 
-> A note on cohort vs. SQL: prefer **Cohort** for the common case — it's structured,
-> validated, and can't be malformed. Reach for **SQL** only when you need something it can't
-> express. Anything you can `SELECT series_aws_url FROM index WHERE …` for *is* a manifest, so
-> SQL can also produce download URLs directly.
+> **Cohort or SQL?** Use **Cohort** when your selection is attribute filters over series
+> metadata (equality/IN + ranges, on the one `index` table) — it's structured, validated, and
+> can't be malformed. Use **SQL** for anything *relational or aggregate*: joins, `GROUP BY`,
+> "X that *also has* Y", per-group counts. Don't force a relational question through the cohort
+> path, and don't reach for SQL when a plain filter will do. (Anything you can
+> `SELECT series_aws_url FROM index WHERE …` for *is* a manifest, so SQL can also produce
+> download URLs directly.)
 
 ### Recommended workflow
 
-1. **Orient** — `stats` for the headline totals; `list_collections` / `list_analysis_results`
-   to find a dataset.
-2. **Ground your filters** — `list_attributes` (what you can filter on) → `get_attribute_values`
-   (the *real* values + correct casing). **Don't guess values.**
-3. **Build & size a cohort** — `cohort/counts` (cheap) to sanity-check size, then
-   `cohort/manifest` for the series page + download payload. Or drop to `sql` for complex logic.
-4. **Get the data** — use the returned `idc` commands / manifest, or `download` locally.
-5. **Be a good citizen** — check `licenses` (CC BY vs CC BY-NC) and include `citations` output
-   when you publish.
+**Start from the shape of your question — not always from "orient."** There are two entry
+points; pick by what you're asking:
+
+**A. Simple attribute filter** (e.g. *"breast MRI from NLST"*):
+1. **Ground values** — `list_attributes` (what you can filter on) → `get_attribute_values` (the
+   *real* values + correct casing). **Don't guess values.**
+2. **Build & size** — `cohort/counts` (cheap) to sanity-check size, then `cohort/manifest` for
+   the series page + download payload.
+
+**B. Relational or aggregate question** (e.g. *"modalities present per collection"*, *"series
+matching a joined condition"*) → **go straight to SQL**:
+1. **Ground the schema** — `list_tables` → `get_table_schema('index')` (and any other table you
+   need). **Don't guess table/column names.**
+2. **Query** — `run_sql('SELECT …')`. Select `series_aws_url` (or `SeriesInstanceUID`) if you
+   want a manifest out of it.
+
+**Both paths then:** get the data (the returned `idc` commands / `manifest.txt`, or `download`
+locally), and **be a good citizen** — check `licenses` (CC BY vs CC BY-NC) and include
+`citations` when you publish.
+
+> Orientation (`stats`, `list_collections`, `list_analysis_results`) helps you *discover* a
+> dataset, but it can't scope a relational question — skip it and go to SQL when you already
+> know what you're joining.
+
+### What you can query today
+
+v3's MVP exposes only the **bundled** index tables — these are all that `list_tables` / `run_sql`
+(and the cohort filters) can reach:
+
+| Table | Granularity |
+|---|---|
+| `index` | one row per **series** (the main table) |
+| `collections_index` | one row per collection |
+| `analysis_results_index` | one row per analysis result |
+| `version_metadata_index` / `prior_versions_index` | IDC release versions / removed series |
+
+That covers most discovery and cohorting, but some questions are **out of scope until later
+phases**, because the specialized table they need isn't exposed yet. Today you **cannot**:
+
+- **Link a segmentation/annotation to the specific image series it derives from** — needs
+  `seg_index.segmented_SeriesInstanceUID` / `ann_index.referenced_SeriesInstanceUID`; the
+  `index` table has no such reference column.
+- **Filter by the segmented structure or other per-segment metadata** — needs `seg_index` or
+  BigQuery's `segmentations` table.
+- **Filter on modality acquisition parameters** (slice thickness, kVp, TE/TR, injected dose…) —
+  these live in `ct_index` / `mr_index` / `pt_index`.
+- **Use slide-microscopy-specific metadata** — needs `sm_index`.
+
+So a request like *"all pathology slides accompanied by segmentations of a specific structure"*
+is **not answerable in v3 today** — neither the cohort path nor SQL can reach the slide↔segment
+linkage or the per-segment structure. For those, use
+[`idc-index`](https://github.com/ImagingDataCommons/idc-index) directly (it can fetch the
+specialized indices) or BigQuery; see the phased roadmap in [`README_v3.md`](../README_v3.md).
 
 ---
 

@@ -32,9 +32,11 @@ logger = logging.getLogger("idc_api.mcp")
 
 INSTRUCTIONS = """\
 This server exposes the NCI Imaging Data Commons (IDC) — public cancer imaging (DICOM) data.
-All data is open; no authentication is needed. Data model: collection_id (a dataset) and
-analysis_result_id (derived annotations/segmentations) group the DICOM hierarchy
-Patient → Study → Series. The main queryable table is `index` (one row per series).
+All data is open; no authentication is needed. Data model: two independent labels group the
+DICOM hierarchy Patient → Study → Series — collection_id (the source dataset; a patient is in
+exactly one) and analysis_result_id (a derived dataset — segmentations/annotations — that can
+span multiple collections, so it is NOT nested under a single collection). The main queryable
+table is `index` (one row per series).
 
 Recommended workflow:
 1. Ground your query first: use list_attributes + get_attribute_values to get *valid* filter
@@ -330,10 +332,11 @@ _GUIDE = """\
 # Querying IDC via this MCP server
 
 **Data model.** IDC stores public cancer imaging as DICOM, organized as
-Patient → Study → Series, with two grouping levels above: `collection_id` (a dataset, e.g.
-`nlst`, `tcga_luad`) and `analysis_result_id` (derived annotations/segmentations). The main
-table is `index` (one row per *series*). IDC is large (~100+ TB) — always check size before
-suggesting a download.
+Patient → Study → Series, with two *independent* grouping labels: `collection_id` (the source
+dataset, e.g. `nlst`, `tcga_luad`; a patient is in exactly one) and `analysis_result_id` (a
+derived dataset — segmentations/annotations — that can span *multiple* collections, so it is
+not nested under one). The main table is `index` (one row per *series*). IDC is large
+(~100+ TB) — always check size before suggesting a download.
 
 **The tools form a few families that build on each other:**
 - *Discovery* (`get_stats`, `list_collections`, `get_collection`, `list_analysis_results`,
@@ -363,6 +366,14 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
    local download only when the server runs on your machine.
 5. *Be a good citizen:* check `get_licenses` (CC BY vs CC BY-NC) and include `get_citations`
    output when publishing.
+
+**Scope (MVP).** `list_tables` / `run_sql` reach only the bundled tables: `index` (series),
+`collections_index`, `analysis_results_index`, `version_metadata_index`, `prior_versions_index`.
+Specialized tables are NOT exposed yet, so some questions cannot be answered here — e.g. linking
+a segmentation/annotation to the image series it derives from (`seg_index` / `ann_index`),
+filtering by segmented structure, modality acquisition parameters (`ct_index` / `mr_index` /
+`pt_index`), or slide-microscopy metadata (`sm_index`). When a request needs those, say so and
+point the user to the `idc-index` Python package or BigQuery rather than guessing.
 """
 
 
