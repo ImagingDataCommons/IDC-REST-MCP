@@ -1,7 +1,9 @@
 """Citation generation from a cohort's source DOIs (mirrors idc-index ``citations_from_selection``).
 
-Resolves distinct ``source_DOI`` values for the selection plus the main IDC publication
-(10.1148/rg.230180), then fetches formatted citations via DOI content negotiation.
+Resolves distinct ``source_DOI`` values for the selection and fetches formatted citations via
+DOI content negotiation. The main IDC publication (10.1148/rg.230180) is fetched separately and
+returned as ``idc_acknowledgment`` so callers can present it as the acknowledgment for IDC
+itself, distinct from the per-dataset citations.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ class CitationsService:
         accept = CITATION_FORMATS[fmt]
 
         where, params = compile_filters(filters)
-        dois = [
+        dataset_dois = [
             r["source_DOI"]
             for r in self.backend.query(
                 f"SELECT DISTINCT source_DOI FROM index WHERE {where} "
@@ -48,17 +50,23 @@ class CitationsService:
                 params,
             ).rows
         ]
-        dois.append(_MAIN_IDC_DOI)
 
-        citations: list = []
-        for doi in dois:
-            try:
-                resp = requests.get(
-                    f"https://dx.doi.org/{doi}", headers={"accept": accept}, timeout=timeout
-                )
-            except requests.RequestException:
-                continue
-            if resp.status_code == 200:
-                citations.append(resp.json() if fmt == "csl-json" else resp.text.strip())
+        citations = [c for doi in dataset_dois if (c := self._fetch(doi, accept, fmt, timeout))]
+        # The IDC paper is kept separate from the dataset citations so callers can surface it as
+        # the acknowledgment for IDC itself, alongside the recommendation on CitationsResult.
+        idc_ack = self._fetch(_MAIN_IDC_DOI, accept, fmt, timeout)
 
-        return CitationsResult(format=fmt, citations=citations)
+        return CitationsResult(format=fmt, citations=citations, idc_acknowledgment=idc_ack)
+
+    @staticmethod
+    def _fetch(doi: str, accept: str, fmt: str, timeout: float):
+        """Fetch one formatted citation via DOI content negotiation; ``None`` on failure."""
+        try:
+            resp = requests.get(
+                f"https://dx.doi.org/{doi}", headers={"accept": accept}, timeout=timeout
+            )
+        except requests.RequestException:
+            return None
+        if resp.status_code == 200:
+            return resp.json() if fmt == "csl-json" else resp.text.strip()
+        return None

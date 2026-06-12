@@ -202,7 +202,12 @@ class ViewerURL(BaseModel):
 
 class CitationsResult(BaseModel):
     format: str
-    citations: list[Any]
+    citations: list[Any]  # per-dataset citations, from the cohort's source DOIs
+    idc_acknowledgment: Any | None = None  # citation for the IDC paper (10.1148/rg.230180)
+    recommendation: str = (
+        "In addition to the per-dataset citations, always acknowledge IDC itself by citing "
+        "Fedorov et al., https://doi.org/10.1148/rg.230180 (see idc_acknowledgment)."
+    )
 
 
 class LicensesResult(BaseModel):

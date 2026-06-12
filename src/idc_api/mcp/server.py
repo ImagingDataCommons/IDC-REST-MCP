@@ -44,8 +44,9 @@ Work this way:
 3. IDC is large (100+ TB) — always report counts/size_TB and warn before any download.
    download_cohort transfers files only when the server runs locally; otherwise use
    get_cohort_urls / the returned `idc` commands.
-Cite with get_citations; respect get_licenses (CC-BY vs CC-BY-NC). See `idc://guide` for the
-data model, the full tool list, and join examples."""
+Cite with get_citations (per-dataset citations plus the IDC paper to acknowledge IDC itself);
+respect get_licenses (CC-BY vs CC-BY-NC). See `idc://guide` for the data model, the full tool
+list, and join examples."""
 
 # stateless_http=True / json_response=True make the hosted (streamable-http) transport
 # horizontally scalable on Cloud Run.
@@ -281,9 +282,11 @@ def get_citations(
     ranges: dict | None = None,
     citation_format: str = "apa",
 ) -> dict:
-    """Get the publications to cite for a cohort (from its source DOIs plus the main IDC
-    paper). `citation_format` is one of: apa, bibtex, csl-json, turtle. Always include these
-    when the user publishes results using IDC data."""
+    """Get the publications to cite for a cohort: per-dataset citations (from the cohort's
+    source DOIs) in `citations`, plus the IDC paper in `idc_acknowledgment`. `citation_format`
+    is one of: apa, bibtex, csl-json, turtle. When the user publishes results using IDC data,
+    always include the per-dataset citations AND acknowledge IDC itself via `idc_acknowledgment`
+    (see the `recommendation` field)."""
     f = _filters(terms, ranges)
     return ctx.citations.get_citations(f, citation_format=citation_format).model_dump(mode="json")
 
@@ -362,8 +365,9 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
 4. *Get the data:* `get_cohort_urls` returns public s3:///gs:// URLs; the `build_cohort`
    response also includes ready-to-run `idc` CLI commands. `download_cohort` performs a real
    local download only when the server runs on your machine.
-5. *Be a good citizen:* check `get_licenses` (CC BY vs CC BY-NC) and include `get_citations`
-   output when publishing.
+5. *Be a good citizen:* check `get_licenses` (CC BY vs CC BY-NC) and, when publishing, include
+   `get_citations` output — both the per-dataset `citations` and `idc_acknowledgment` (the IDC
+   paper, https://doi.org/10.1148/rg.230180) to acknowledge IDC itself.
 
 **Tables for run_sql.** Bundled: `index` (series), `collections_index`,
 `analysis_results_index`, `version_metadata_index`, `prior_versions_index`. Specialized indices

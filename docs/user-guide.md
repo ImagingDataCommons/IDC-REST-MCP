@@ -329,8 +329,12 @@ vs **CC BY-NC** (non-commercial only). Before reusing or redistributing a cohort
 
 - **`licenses`** returns the series count + size per license for your filter, so you can see at
   a glance whether the selection is commercial-friendly.
-- **`citations`** returns the publications to cite (the cohort's source DOIs plus the main IDC
-  paper) in `apa`, `bibtex`, `csl-json`, or `turtle`. Include these when you publish.
+- **`citations`** returns the publications to cite in `apa`, `bibtex`, `csl-json`, or `turtle`:
+  the per-dataset citations (from the cohort's source DOIs) in `citations`, and the IDC paper in
+  `idc_acknowledgment`. When you publish results using IDC data, include the per-dataset
+  citations **and** acknowledge IDC itself by citing the IDC paper
+  ([10.1148/rg.230180](https://doi.org/10.1148/rg.230180)); the `recommendation` field restates
+  this.
 
 ---
 
