@@ -67,8 +67,9 @@ ready-to-use download payload (it reuses the **Retrieval** logic to build that p
 **Retrieval** is the download half on its own — public `s3://`/`gs://` URLs, a full
 `manifest.txt`, and `idc` CLI commands. **SQL** is the bypass: when your selection needs a
 `GROUP BY`, a join, or an aggregation that structured cohort filters can't express, you write a
-read-only `SELECT` against `index`. The side tools (viewer / citations / licenses) all operate
-on the *same* cohort filters.
+read-only `SELECT` against `index` (and the specialized indices it joins to — see
+[What you can query](#what-you-can-query-tables-available-to-sql)). The side tools (viewer /
+citations / licenses) all operate on the *same* cohort filters.
 
 > **Cohort or SQL?** Use **Cohort** when your selection is attribute filters over series
 > metadata (equality/IN + ranges, on the one `index` table) — it's structured, validated, and
@@ -104,35 +105,43 @@ locally), and **be a good citizen** — check `licenses` (CC BY vs CC BY-NC) and
 > dataset, but it can't scope a relational question — skip it and go to SQL when you already
 > know what you're joining.
 
-### What you can query today
+### What you can query (tables available to SQL)
 
-v3's MVP exposes only the **bundled** index tables — these are all that `list_tables` / `run_sql`
-(and the cohort filters) can reach:
+`run_sql` / `list_tables` can reach the **bundled** tables plus the **specialized** indices,
+which are fetched from idc-index at build time and joined in SQL (the cohort filters still apply
+to `index` only). Join the specialized series-level indices to `index` on `SeriesInstanceUID`.
 
-| Table | Granularity |
+| Table(s) | Granularity / what it adds |
 |---|---|
-| `index` | one row per **series** (the main table) |
-| `collections_index` | one row per collection |
+| `index` | one row per **series** — the main table |
+| `collections_index` | one row per collection (curated metadata) |
 | `analysis_results_index` | one row per analysis result |
 | `version_metadata_index` / `prior_versions_index` | IDC release versions / removed series |
+| `seg_index`, `ann_index`, `ann_group_index`, `rtstruct_index` | segmentations / annotations / RT structures, with the **reference** to the image series they derive from (`segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`) |
+| `ct_index`, `mr_index`, `pt_index` | per-modality acquisition parameters (slice thickness, kVp, TE/TR, injected dose…) |
+| `sm_index`, `sm_instance_index` | slide-microscopy (pathology) series / instance metadata |
+| `contrast_index`, `volume_geometry_index` | contrast agent / 3D volume geometry |
+| `clinical_index` | per-collection clinical-table data dictionary |
 
-That covers most discovery and cohorting, but some questions are **out of scope until later
-phases**, because the specialized table they need isn't exposed yet. Today you **cannot**:
+This is what makes **relational** questions answerable. For example, *"pathology slides that
+have a segmentation of a specific structure"* — impossible against `index` alone — is a join of
+`index` (the slides) to `seg_index` (the segmentations) on the segmented image series:
 
-- **Link a segmentation/annotation to the specific image series it derives from** — needs
-  `seg_index.segmented_SeriesInstanceUID` / `ann_index.referenced_SeriesInstanceUID`; the
-  `index` table has no such reference column.
-- **Filter by the segmented structure or other per-segment metadata** — needs `seg_index` or
-  BigQuery's `segmentations` table.
-- **Filter on modality acquisition parameters** (slice thickness, kVp, TE/TR, injected dose…) —
-  these live in `ct_index` / `mr_index` / `pt_index`.
-- **Use slide-microscopy-specific metadata** — needs `sm_index`.
+```sql
+SELECT i.collection_id, count(DISTINCT i.SeriesInstanceUID) AS slides
+FROM index i
+JOIN seg_index seg ON seg.segmented_SeriesInstanceUID = i.SeriesInstanceUID
+WHERE i.Modality = 'SM'                                    -- slide microscopy (pathology)
+  AND seg.SegmentedPropertyType_CodeMeanings LIKE '%Nucleus%'   -- the segmented structure
+GROUP BY 1 ORDER BY slides DESC
+```
 
-So a request like *"all pathology slides accompanied by segmentations of a specific structure"*
-is **not answerable in v3 today** — neither the cohort path nor SQL can reach the slide↔segment
-linkage or the per-segment structure. For those, use
-[`idc-index`](https://github.com/ImagingDataCommons/idc-index) directly (it can fetch the
-specialized indices) or BigQuery; see the phased roadmap in [`README_v3.md`](../README_v3.md).
+> **Still BigQuery-only:** a handful of things remain outside these indices — *per-individual-segment*
+> detail (each segment rather than the series-level `DISTINCT`-aggregated code lists in
+> `seg_index`), DICOM SR quantitative/qualitative measurements (radiomics), and private DICOM
+> elements. For those, use [`idc-index`](https://github.com/ImagingDataCommons/idc-index) with
+> BigQuery. Note: `seg_index`'s multi-valued code columns are aggregated independently, so
+> positional correspondence between them is not preserved.
 
 ---
 
@@ -332,6 +341,7 @@ Environment variables (prefix `IDC_API_`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `DUCKDB_PATH` | (built on first run) | Path to the read-only DuckDB file |
+| `INCLUDE_INDICES` | `all` | Specialized indices to build in: `all`, `none` (bundled only, fully offline), or a comma list (e.g. `seg_index,ct_index`). Ignored when `DUCKDB_PATH` is set. |
 | `SQL_MAX_ROWS` | `5000` | Max rows returned by `run_sql` |
 | `SQL_TIMEOUT_SECONDS` | `30` | Per-query timeout for `run_sql` |
 | `DEFAULT_PAGE_SIZE` | `100` | Default `cohort/manifest` page size |

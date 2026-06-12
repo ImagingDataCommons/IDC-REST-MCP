@@ -15,10 +15,11 @@ One backend-agnostic **core** library, two thin adapters over it:
 Both surfaces share one core, so a capability is implemented and tested once and exposed in
 both.
 
-> **Status:** Phase 1 (MVP). Core radiology discovery, cohort/manifest building, guarded
-> read-only SQL, schema discovery, viewer URLs, citations, and licenses. Specialized indices
-> (ct/mr/pt, seg/ann, slide microscopy), clinical data, and an optional BigQuery backend are
-> planned for later phases.
+> **Status:** Phase 1 (MVP). Discovery, cohort/manifest building, guarded read-only SQL, schema
+> discovery, viewer URLs, citations, and licenses. SQL can query and join the specialized
+> indices (seg/ann/rtstruct, ct/mr/pt, slide microscopy, contrast/geometry, clinical) — fetched
+> at build time. An optional BigQuery backend (for per-segment detail, SR radiomics, and private
+> DICOM elements) is planned for a later phase.
 
 ## Documentation
 
@@ -37,9 +38,12 @@ uv pip install -e ".[dev]"
 uv run --directory . pytest tests_v3 -q
 ```
 
-The first run builds a small read-only DuckDB database from the bundled `idc-index-data`
-Parquet (cached under your temp dir, pinned to the index version). It is rebuilt only when
-`idc-index-data` is upgraded. No GCP account, network, or credentials are needed for queries.
+The first run builds a read-only DuckDB database (cached under your temp dir, pinned to the
+index version; rebuilt only when `idc-index-data` is upgraded). By default it also fetches the
+specialized indices from idc-index releases (~40 MB), so the **first build downloads data** —
+set `IDC_API_INCLUDE_INDICES=none` to build from the bundled Parquet only (no build-time
+downloads, just what `idc-index-data` already ships). No GCP account or credentials are ever
+needed.
 
 ## Run
 

@@ -1,4 +1,5 @@
-"""Shared fixtures. All tests run offline against the bundled idc-index Parquet."""
+"""Shared fixtures. The default build (IDC_API_INCLUDE_INDICES=all) fetches the specialized
+idc-index parquet on first run; set IDC_API_INCLUDE_INDICES=none for a bundled-only build."""
 
 from __future__ import annotations
 

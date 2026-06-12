@@ -367,13 +367,18 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
 5. *Be a good citizen:* check `get_licenses` (CC BY vs CC BY-NC) and include `get_citations`
    output when publishing.
 
-**Scope (MVP).** `list_tables` / `run_sql` reach only the bundled tables: `index` (series),
-`collections_index`, `analysis_results_index`, `version_metadata_index`, `prior_versions_index`.
-Specialized tables are NOT exposed yet, so some questions cannot be answered here — e.g. linking
-a segmentation/annotation to the image series it derives from (`seg_index` / `ann_index`),
-filtering by segmented structure, modality acquisition parameters (`ct_index` / `mr_index` /
-`pt_index`), or slide-microscopy metadata (`sm_index`). When a request needs those, say so and
-point the user to the `idc-index` Python package or BigQuery rather than guessing.
+**Tables for run_sql.** Bundled: `index` (series), `collections_index`,
+`analysis_results_index`, `version_metadata_index`, `prior_versions_index`. Specialized indices
+(join to `index` on `SeriesInstanceUID`): `seg_index` / `ann_index` / `ann_group_index` /
+`rtstruct_index` (segmentations/annotations — they reference the segmented/annotated image series
+via `segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`), `ct_index` / `mr_index` /
+`pt_index` (acquisition parameters), `sm_index` / `sm_instance_index` (slide microscopy),
+`contrast_index`, `volume_geometry_index`, `clinical_index`. This makes relational questions
+answerable — e.g. "pathology slides (Modality='SM') with a segmentation of structure X" is
+`index JOIN seg_index ON seg_index.segmented_SeriesInstanceUID = index.SeriesInstanceUID`,
+filtered on `seg_index.SegmentedPropertyType_CodeMeanings`. Call `get_table_schema(table)` for
+exact columns. Still BigQuery-only: per-individual-segment detail, SR radiomics measurements,
+and private DICOM elements — point the user to `idc-index` + BigQuery for those.
 """
 
 
@@ -392,7 +397,7 @@ def tables_resource() -> str:
 @mcp.resource("idc://schema/{table}", mime_type="application/json")
 def schema_resource(table: str) -> str:
     """Full column schema (name, type, description) for a given IDC table."""
-    if table not in core_schema.list_table_names():
+    if table not in ctx.backend.list_tables():
         raise ToolError(f"Unknown table: {table!r}")
     return json.dumps(core_schema.table_schema(table), indent=2)
 

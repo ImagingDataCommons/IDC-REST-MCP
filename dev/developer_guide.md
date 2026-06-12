@@ -39,7 +39,7 @@ npx @modelcontextprotocol/inspector uv run idc-mcp
 ## Test
 
 ```bash
-uv run --directory . pytest tests_v3 -q       # full suite (offline, deterministic)
+uv run --directory . pytest tests_v3 -q       # full suite (first run fetches specialized indices)
 uv run --directory . pytest tests_v3/test_backend_guards.py -q   # one file
 ```
 
@@ -53,6 +53,7 @@ uv run --directory . pytest tests_v3/test_backend_guards.py -q   # one file
 | [test_rest.py](../tests_v3/test_rest.py) | REST endpoint shapes, 404/501 mapping, SQL guard, OpenAPI |
 | [test_mcp.py](../tests_v3/test_mcp.py) | Tools registered, prescriptive descriptions, calls, clean errors, resources |
 | [test_parity.py](../tests_v3/test_parity.py) | **Parity:** core service == REST == MCP for the same filter |
+| [test_specialized_indices.py](../tests_v3/test_specialized_indices.py) | Specialized indices fetched + exposed to SQL + joinable to `index` |
 
 Fixtures live in [tests_v3/conftest.py](../tests_v3/conftest.py): `ctx` (the core
 `AppContext`), `client` (FastAPI `TestClient`), and `parse_mcp` (normalizes a FastMCP
@@ -60,12 +61,14 @@ Fixtures live in [tests_v3/conftest.py](../tests_v3/conftest.py): `ctx` (the cor
 
 ### Continuous integration
 
-[`.github/workflows/v3-ci.yml`](../.github/workflows/v3-ci.yml) runs on pushes to `master`
-and on PRs that touch `src/idc_api/**`, `tests_v3/**`, `pyproject.toml`, or `uv.lock`. It
-installs locked deps with `uv sync --extra dev`, then runs `ruff check` and `pytest tests_v3`
-on Python 3.11 and 3.12. The suite is fully offline, so CI needs no secrets. The existing
-CircleCI pipeline ([.circleci/config.yml](../.circleci/config.yml)) is unchanged and still
-builds/deploys v2. Before pushing, run the same two commands locally:
+[`.github/workflows/v3-ci.yml`](../.github/workflows/v3-ci.yml) runs on pushes to `idc-api-v3`
+(and manual dispatch) and on PRs that touch `src/idc_api/**`, `tests_v3/**`, `pyproject.toml`,
+or `uv.lock`. It installs locked deps with `uv sync --extra dev`, then runs `ruff check` and
+`pytest tests_v3` on Python 3.11 and 3.12. CI needs no secrets or GCP; its first test run
+downloads the specialized indices (`IDC_API_INCLUDE_INDICES=all` by default — set `none` to run
+from bundled data only). The existing CircleCI pipeline
+([.circleci/config.yml](../.circleci/config.yml)) is unchanged and still builds/deploys v2.
+Before pushing, run the same two commands locally:
 
 ```bash
 uv run ruff check src tests_v3
@@ -153,17 +156,20 @@ Say you want `get_modality_summary()` (series count + size per modality). Touch 
 
 Run `uv run --directory . pytest tests_v3 -q` and you're done.
 
-## Walkthrough: add an index table (Phase 2)
+## Walkthrough: specialized index tables
 
-The MVP exposes only the *bundled* tables. To add e.g. `ct_index`:
+Bundled tables (`schema.BUNDLED_TABLES`) ship as Parquet inside `idc-index-data`. The
+specialized indices (`schema.SPECIALIZED_TABLES`: ct/mr/pt, seg/ann, sm, clinical, …) are
+*fetched* from idc-index releases at build time and built into the DuckDB file:
+`build_database_file` downloads each via `idc-index`'s `fetch_index` and `CREATE TABLE`s it,
+gated by `IDC_API_INCLUDE_INDICES` (default `all`). Schema discovery (`list_tables` /
+`get_table_schema`) and `run_sql` pick them up automatically — `backend.list_tables()` reads the
+actual DuckDB catalog, so the listing reflects exactly what a given build included.
 
-1. Ensure the Parquet is present at build time. Bundled tables are listed in
-   `schema.BUNDLED_TABLES`; fetchable indices (ct/mr/pt, seg/ann, sm, clinical) must first be
-   downloaded via `idc-index`'s `fetch_index`, then registered. Add a build step that fetches
-   and `CREATE TABLE`s them (extend `build_database_file`), and add the name to the registry.
-2. Schema discovery (`list_tables` / `get_table_schema`) and `run_sql` pick it up
-   automatically once it's a registered table.
-3. Add targeted service methods/tools for common joins (e.g. CT acquisition parameters).
+To expose a *new* index that idc-index adds later: add its name to `schema.SPECIALIZED_TABLES`
+(the SQL name equals its `idc_index_data.INDEX_METADATA` key). Nothing else is required for SQL
+access. Optionally add targeted service methods/tools for common joins (e.g. CT acquisition
+parameters).
 
 ## Walkthrough: add the BigQuery backend (Phase 3)
 
@@ -181,6 +187,7 @@ Environment variables (prefix `IDC_API_`), defined in
 | Var | Default | Meaning |
 |---|---|---|
 | `DUCKDB_PATH` | (built at runtime) | Use a prebuilt read-only DuckDB file (image bakes one) |
+| `INCLUDE_INDICES` | all | Specialized indices to fetch+build: `all`, `none`, or a comma list. Ignored when `DUCKDB_PATH` is set |
 | `DUCKDB_MEMORY_LIMIT` / `DUCKDB_THREADS` / `DUCKDB_TEMP_DIRECTORY_SIZE` | 4GB / 4 / 4GB | Engine caps |
 | `SQL_MAX_ROWS` | 5000 | Row cap for `run_sql` |
 | `SQL_TIMEOUT_SECONDS` | 30 | Statement timeout |

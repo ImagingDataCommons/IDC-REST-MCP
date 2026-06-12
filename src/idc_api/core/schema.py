@@ -4,12 +4,16 @@ Single source of truth for which idc-index tables v3 exposes, how they map to th
 Parquet, the rich per-column descriptions (from ``idc_index_data.INDEX_METADATA``), and the
 curated set of attributes usable as cohort filters.
 
-MVP exposes only the tables that ship *bundled* with ``idc-index-data`` (no network fetch).
-Specialized indices (ct/mr/pt, seg/ann, sm, clinical) are added in later phases.
+Two kinds of tables: BUNDLED ones ship as Parquet *inside the installed* ``idc-index-data``
+package, so they need no downloads beyond installing it; SPECIALIZED ones (ct/mr/pt, seg/ann,
+sm, clinical, …) are not in the package and are *fetched* from idc-index releases at build time
+(see ``IDC_API_INCLUDE_INDICES`` and ``duckdb_backend.build_database_file``). Schemas for both
+are bundled, so schema discovery works for a specialized table even before its data is fetched.
 """
 
 from __future__ import annotations
 
+import hashlib
 from functools import lru_cache
 
 import idc_index_data
@@ -17,6 +21,10 @@ import idc_index_data
 # Exposed SQL table name -> key in idc_index_data.INDEX_METADATA.
 # The main series-level table is exposed as ``index`` to match idc-index/idc docs
 # (e.g. ``SELECT ... FROM index``), so SQL written for idc-index is portable here.
+#
+# BUNDLED tables ship as Parquet inside ``idc-index-data`` (no network). SPECIALIZED tables
+# are published as release assets and *fetched* (via idc-index) at build time — their schemas
+# ARE bundled, so schema discovery works without fetching; only the data needs downloading.
 BUNDLED_TABLES: dict[str, str] = {
     "index": "idc_index",
     "collections_index": "collections_index",
@@ -25,21 +33,84 @@ BUNDLED_TABLES: dict[str, str] = {
     "prior_versions_index": "prior_versions_index",
 }
 
+# Specialized series-level indices. All join to ``index`` on SeriesInstanceUID except
+# ``clinical_index`` (a per-collection data dictionary, joined on collection_id). The SQL
+# table name equals the idc-index metadata key for each.
+SPECIALIZED_TABLES: dict[str, str] = {
+    "sm_index": "sm_index",
+    "sm_instance_index": "sm_instance_index",
+    "seg_index": "seg_index",
+    "ann_index": "ann_index",
+    "ann_group_index": "ann_group_index",
+    "rtstruct_index": "rtstruct_index",
+    "ct_index": "ct_index",
+    "mr_index": "mr_index",
+    "pt_index": "pt_index",
+    "contrast_index": "contrast_index",
+    "volume_geometry_index": "volume_geometry_index",
+    "clinical_index": "clinical_index",
+}
+
+ALL_TABLES: dict[str, str] = {**BUNDLED_TABLES, **SPECIALIZED_TABLES}
+
 MAIN_TABLE = "index"
 
 
 def metadata_key(table: str) -> str:
-    if table not in BUNDLED_TABLES:
+    if table not in ALL_TABLES:
         raise KeyError(table)
-    return BUNDLED_TABLES[table]
+    return ALL_TABLES[table]
 
 
 def parquet_path(table: str) -> str:
+    """Local Parquet path for a *bundled* table. Specialized tables have no bundled Parquet —
+    obtain their path via the backend's fetch step instead."""
     return str(idc_index_data.INDEX_METADATA[metadata_key(table)]["parquet_filepath"])
 
 
-def list_table_names() -> list[str]:
+def bundled_table_names() -> list[str]:
     return list(BUNDLED_TABLES.keys())
+
+
+def specialized_table_names() -> list[str]:
+    return list(SPECIALIZED_TABLES.keys())
+
+
+def registered_table_names() -> list[str]:
+    """Every table v3 knows how to describe (bundled + specialized), regardless of whether a
+    given build actually included the specialized ones."""
+    return list(ALL_TABLES.keys())
+
+
+def resolve_include(setting: str | None) -> list[str]:
+    """Parse the ``IDC_API_INCLUDE_INDICES`` setting into the specialized tables to build in.
+
+    ``"all"`` -> every specialized table; ``"none"``/``""`` -> bundled only; otherwise a
+    comma-separated allow-list of specialized table names. Returns names in registry order.
+    """
+    s = (setting or "").strip().lower()
+    if s in ("", "none", "bundled", "base"):
+        return []
+    if s == "all":
+        return list(SPECIALIZED_TABLES.keys())
+    requested = {n.strip() for n in setting.split(",") if n.strip()}
+    unknown = requested - set(SPECIALIZED_TABLES)
+    if unknown:
+        raise ValueError(
+            f"Unknown specialized index/indices in IDC_API_INCLUDE_INDICES: "
+            f"{', '.join(sorted(unknown))}. Valid: {', '.join(SPECIALIZED_TABLES)}."
+        )
+    return [n for n in SPECIALIZED_TABLES if n in requested]
+
+
+def include_token(included: list[str]) -> str:
+    """Short, stable token describing an included-specialized set, for cache-file naming."""
+    if not included:
+        return "base"
+    if set(included) == set(SPECIALIZED_TABLES):
+        return "all"
+    digest = hashlib.sha1(",".join(sorted(included)).encode()).hexdigest()[:8]
+    return f"sub-{digest}"
 
 
 @lru_cache(maxsize=None)

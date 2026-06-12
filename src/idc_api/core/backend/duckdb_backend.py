@@ -73,18 +73,65 @@ def _jsonify(value: Any) -> Any:
     return value
 
 
-def build_database_file(path: str) -> None:
-    """Build a DuckDB file containing the bundled idc-index tables.
+def _fetch_specialized_parquets(names: list[str]) -> dict[str, str]:
+    """Download (via idc-index) the Parquet for each specialized table, returning
+    ``{table_name: local_parquet_path}``. Requires network; raises a clear error on failure.
 
-    Used both by ``DuckDBBackend`` on first run and at image-build time (bake the file into
-    the container, point ``IDC_API_DUCKDB_PATH`` at it) for instant cold starts.
+    idc-index is imported lazily and a single client is reused for all fetches (instantiating
+    it loads the main index once), so the serving path never pays for the heavier client.
     """
+    if not names:
+        return {}
+    try:
+        from idc_index import IDCClient
+    except Exception as exc:  # pragma: no cover - idc-index is a hard dependency
+        raise RuntimeError("idc-index is required to fetch specialized indices.") from exc
+
+    client = IDCClient()
+    paths: dict[str, str] = {}
+    for name in names:
+        try:
+            client.fetch_index(name)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to fetch specialized index {name!r} (network is required at build "
+                f"time). To build offline with bundled tables only, set "
+                f"IDC_API_INCLUDE_INDICES=none. Cause: {exc}"
+            ) from exc
+        fp = client.indices_overview.get(name, {}).get("file_path")
+        if not fp or not Path(fp).exists():
+            raise RuntimeError(
+                f"Specialized index {name!r} did not resolve to a local Parquet file after "
+                f"fetch; cannot include it."
+            )
+        paths[name] = fp
+    return paths
+
+
+def build_database_file(path: str, specialized: list[str] | None = None) -> None:
+    """Build a DuckDB file containing the bundled idc-index tables plus the requested
+    ``specialized`` indices (``None`` -> all specialized indices).
+
+    Bundled tables come from the Parquet shipped in ``idc-index-data`` (offline). Specialized
+    indices are fetched over the network here at build time. Used both by ``DuckDBBackend`` on
+    first run and at image-build time (bake the file into the container, point
+    ``IDC_API_DUCKDB_PATH`` at it) for instant cold starts.
+    """
+    if specialized is None:
+        specialized = schema.specialized_table_names()
+    fetched = _fetch_specialized_parquets(specialized)
+
     con = duckdb.connect(path)
     try:
-        for table in schema.list_table_names():
+        for table in schema.bundled_table_names():
             con.execute(
                 f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',
                 [schema.parquet_path(table)],
+            )
+        for table, parquet in fetched.items():
+            con.execute(
+                f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',
+                [parquet],
             )
     finally:
         con.close()
@@ -99,24 +146,46 @@ class DuckDBBackend(QueryBackend):
         # connect lets multiple backends (e.g. REST + tests) coexist, whereas post-connect
         # SET + lock_configuration would make the 2nd connection fail on the locked instance.
         self._con = duckdb.connect(db_path, read_only=True, config=self._hardening_config())
+        # Reflect exactly what was built into this file (bundled + whichever specialized
+        # indices were included), in registry order. Computed once — tables never change.
+        self._table_names = self._catalog_table_names()
 
     # --- construction ---------------------------------------------------------------------
     def _ensure_database(self) -> str:
-        """Return a path to a DuckDB file containing the bundled tables, building it if
-        necessary. Pinned to the installed ``idc-index-data`` version."""
+        """Return a path to a DuckDB file containing the bundled tables (plus any requested
+        specialized indices), building it if necessary. Pinned to the installed
+        ``idc-index-data`` version, and keyed by which specialized indices are included so
+        different ``IDC_API_INCLUDE_INDICES`` settings don't collide on one cache file."""
         if self._settings.duckdb_path:
             return self._settings.duckdb_path
 
-        cache = Path(tempfile.gettempdir()) / f"idc_api_v3_{idc_index_data.__version__}.duckdb"
+        included = schema.resolve_include(self._settings.include_indices)
+        token = schema.include_token(included)
+        cache = (
+            Path(tempfile.gettempdir())
+            / f"idc_api_v3_{idc_index_data.__version__}_{token}.duckdb"
+        )
         if cache.exists():
             return str(cache)
 
         tmp = cache.with_suffix(f".{os.getpid()}.building")
         if tmp.exists():
             tmp.unlink()
-        build_database_file(str(tmp))
+        build_database_file(str(tmp), included)
         os.replace(tmp, cache)  # atomic publish
         return str(cache)
+
+    def _catalog_table_names(self) -> list[str]:
+        """Tables actually present in the open database, ordered by the schema registry
+        (bundled first, then specialized), so the listing reflects this build exactly."""
+        cur = self._con.cursor()
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        )
+        present = {r[0] for r in cur.fetchall()}
+        ordered = [t for t in schema.registered_table_names() if t in present]
+        ordered += sorted(present - set(ordered))  # any unexpected tables, deterministically
+        return ordered
 
     def _hardening_config(self) -> dict[str, str]:
         """DuckDB settings for running untrusted SQL (https://duckdb.org/docs/stable/
@@ -174,7 +243,7 @@ class DuckDBBackend(QueryBackend):
 
     # --- QueryBackend ---------------------------------------------------------------------
     def list_tables(self) -> list[str]:
-        return schema.list_table_names()
+        return list(self._table_names)
 
     def query(
         self,

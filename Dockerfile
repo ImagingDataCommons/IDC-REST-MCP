@@ -15,7 +15,11 @@ COPY pyproject.toml README_v3.md ./
 COPY src ./src
 RUN uv pip install --system .
 
-# Bake the read-only DuckDB file at build time so cold starts are instant.
+# Bake the read-only DuckDB file at build time so cold starts are instant. With no argument,
+# build_database_file includes ALL specialized indices (seg/ann/sm/ct/mr/pt, clinical, …),
+# fetched from idc-index-data releases — so `docker build` needs network here (~40 MB). The
+# baked file is used as-is at runtime (IDC_API_DUCKDB_PATH set below), so the container itself
+# stays offline. To bake a smaller image, pass a subset, e.g. b('/app/idc.duckdb', ['seg_index']).
 ENV IDC_API_DUCKDB_PATH=/app/idc.duckdb
 RUN python -c "from idc_api.core.backend.duckdb_backend import build_database_file as b; b('/app/idc.duckdb')"
 

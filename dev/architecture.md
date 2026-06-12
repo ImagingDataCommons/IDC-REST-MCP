@@ -132,10 +132,14 @@ run_sql(sql) → QueryService.run_sql → backend.run_user_sql(sql)
 [`duckdb_backend.py`](../src/idc_api/core/backend/duckdb_backend.py):
 
 1. **Build once.** `build_database_file()` creates a DuckDB file by `CREATE TABLE … AS SELECT
-   * FROM read_parquet(<bundled parquet>)` for each table in `schema.BUNDLED_TABLES` (main
-   series table exposed as `index`, matching idc-index/IDC docs). `_ensure_database()` caches
-   it in the temp dir keyed by the `idc-index-data` version (atomic publish via `os.replace`),
-   or uses a prebuilt file when `IDC_API_DUCKDB_PATH` is set (the Docker image bakes one).
+   * FROM read_parquet(<parquet>)` for each table in `schema.BUNDLED_TABLES` (main series table
+   exposed as `index`, matching idc-index/IDC docs) plus the requested `schema.SPECIALIZED_TABLES`
+   (seg/ann/sm/ct/mr/pt, clinical, …), which are fetched from idc-index releases at build time
+   via `_fetch_specialized_parquets()` — gated by `IDC_API_INCLUDE_INDICES` (default `all`).
+   `_ensure_database()` caches the file in the temp dir keyed by the `idc-index-data` version
+   *and* the included-index set (atomic publish via `os.replace`), or uses a prebuilt file when
+   `IDC_API_DUCKDB_PATH` is set (the Docker image bakes one with all indices). `list_tables()`
+   reads the actual DuckDB catalog, so it reflects exactly what a given build contains.
 2. **Reopen read-only + hardened.** The serving connection is opened
    `read_only=True` with a `config` dict applying DuckDB's untrusted-SQL hardening
    (`enable_external_access=false`, no extensions, memory/thread/temp caps,

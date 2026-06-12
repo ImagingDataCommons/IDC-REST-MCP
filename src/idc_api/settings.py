@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     duckdb_threads: int = 4
     duckdb_temp_directory_size: str = "4GB"
 
+    # Specialized idc-index tables (seg/ann/sm/ct/mr/pt, clinical, …) to build into the DuckDB
+    # database so run_sql can query/join them. ``"all"`` (default) fetches every specialized
+    # index from idc-index releases at build time (needs network on first build); ``"none"``
+    # keeps only the bundled tables (fully offline); or a comma-separated allow-list of names.
+    # Ignored when ``duckdb_path`` points at a prebuilt file (whatever was baked is used as-is).
+    include_indices: str = "all"
+
     # --- Guarded SQL tool ---
     sql_max_rows: int = 5000
     sql_timeout_seconds: float = 30.0
