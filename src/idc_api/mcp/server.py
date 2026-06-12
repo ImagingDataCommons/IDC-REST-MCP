@@ -39,8 +39,10 @@ Work this way:
 1. Ground first — list_attributes + get_attribute_values for valid filter values; list_tables +
    get_table_schema before SQL. Do not guess values or column names.
 2. build_cohort for attribute filters; run_sql for relational/aggregate questions (read-only
-   DuckDB; `index` plus the specialized indices — seg/ann/sm/ct/mr/pt, … — joined on
-   SeriesInstanceUID).
+   DuckDB; `index` plus specialized indices joined on SeriesInstanceUID and named for the
+   DICOM Modality they detail — seg_index: what anatomy a SEG segments; ct/mr/pt_index:
+   acquisition; sm/ann: microscopy; …). If a property isn't in list_attributes (e.g.
+   segmented anatomy), check list_tables before concluding it's unavailable.
 3. IDC is large (100+ TB) — always report counts/size_TB and warn before any download.
    download_cohort transfers files only when the server runs locally; otherwise use
    get_cohort_urls / the returned `idc` commands.
@@ -186,8 +188,12 @@ def get_attribute_values(attribute: str, limit: int = 50) -> dict:
 @mcp.tool()
 @guard
 def list_tables() -> dict:
-    """List the tables available to run_sql (the main `index` plus collection/analysis/
-    version metadata tables). Call before writing SQL."""
+    """List the tables available to run_sql: the main `index`, collection/analysis/version
+    metadata tables, and the specialized indices — named `<modality>_index` after the DICOM
+    Modality they describe (seg_index: segmented anatomy of SEG series; ct/mr/pt_index:
+    acquisition parameters; sm/ann: microscopy) plus contrast/volume_geometry/clinical.
+    Call this before writing SQL, and whenever a property you need (e.g. what a segmentation
+    contains) is not a filterable attribute — it may live in a specialized index."""
     return ctx.query.list_tables().model_dump(mode="json")
 
 
@@ -227,9 +233,10 @@ def build_cohort(
 def run_sql(sql: str, max_rows: int = 100) -> dict:
     """Run a read-only SQL SELECT against the IDC index using DuckDB and return the rows.
     Use for anything build_cohort can't express (GROUP BY, joins across tables, custom
-    aggregations). Only a single read-only SELECT/WITH statement is allowed; the connection
-    is sandboxed (no writes, no file/network access). Call list_tables / get_table_schema
-    first to use correct table and column names. The main table is `index`."""
+    aggregations, filters on columns that exist only in a specialized index — e.g. segmented
+    anatomy in seg_index). Only a single read-only SELECT/WITH statement is allowed; the
+    connection is sandboxed (no writes, no file/network access). Call list_tables /
+    get_table_schema first to use correct table and column names. The main table is `index`."""
     return ctx.query.run_sql(sql, max_rows=max_rows).model_dump(mode="json")
 
 
@@ -359,7 +366,9 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
 1. *Find data:* `list_collections` / `get_collection` (imaging datasets), `list_analysis_results`
    (derived annotations & segmentations).
 2. *Ground filters (do this first to avoid wrong values):* `list_attributes` → valid attributes;
-   `get_attribute_values(attribute=...)` → valid values + counts (correct casing!).
+   `get_attribute_values(attribute=...)` → valid values + counts (correct casing!). If the
+   property you need is not there (e.g. what anatomy a segmentation contains), it likely lives
+   in a specialized index — see *Tables for run_sql* below.
 3. *Build:* `build_cohort(terms={...}, ranges={...})` → counts, sample series, download payload.
    For complex queries: `list_tables` → `get_table_schema('index')` → `run_sql('SELECT ...')`.
 4. *Get the data:* `get_cohort_urls` returns public s3:///gs:// URLs; the `build_cohort`
@@ -371,12 +380,18 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
 
 **Tables for run_sql.** Bundled: `index` (series), `collections_index`,
 `analysis_results_index`, `version_metadata_index`, `prior_versions_index`. Specialized indices
-(join to `index` on `SeriesInstanceUID`): `seg_index` / `ann_index` / `ann_group_index` /
-`rtstruct_index` (segmentations/annotations — they reference the segmented/annotated image series
-via `segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`), `ct_index` / `mr_index` /
-`pt_index` (acquisition parameters), `sm_index` / `sm_instance_index` (slide microscopy),
-`contrast_index`, `volume_geometry_index`, `clinical_index`. This makes relational questions
-answerable — e.g. "pathology slides (Modality='SM') with a segmentation of structure X" is
+hold the modality-specific metadata `index` lacks and are named `<modality>_index` after the
+DICOM Modality of the series they describe — when a Modality value is central to your question
+(SEG, CT, SM, …), check its index. They join to `index` on `SeriesInstanceUID`: `seg_index` /
+`ann_index` / `ann_group_index` / `rtstruct_index` (segmentations/annotations — *what anatomy
+was segmented* via `SegmentedPropertyType_CodeMeanings`, plus the segmented/annotated image
+series via `segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`; note that
+`BodyPartExamined` reflects the source acquisition, NOT what a SEG/RTSTRUCT segments),
+`ct_index` / `mr_index` / `pt_index` (acquisition parameters), `sm_index` / `sm_instance_index`
+(slide microscopy). Outside the naming convention: `contrast_index`, `volume_geometry_index`
+(cross-modality), `clinical_index` (per-collection, joins on `collection_id`). This makes
+relational questions answerable — e.g. "pathology slides (Modality='SM') with a segmentation of
+structure X" is
 `index JOIN seg_index ON seg_index.segmented_SeriesInstanceUID = index.SeriesInstanceUID`,
 filtered on `seg_index.SegmentedPropertyType_CodeMeanings`. Call `get_table_schema(table)` for
 exact columns. Still BigQuery-only: per-individual-segment detail, SR radiomics measurements,

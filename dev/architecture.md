@@ -90,7 +90,9 @@ output are structurally identical — this is what the parity test enforces.
 - [schema.py](../src/idc_api/core/schema.py) is the single source of truth for which tables
   exist (`BUNDLED_TABLES`), their column metadata (sourced from
   `idc_index_data.INDEX_METADATA`), and the curated `FILTERABLE_ATTRIBUTES` (each tagged
-  `term` or `range`).
+  `term` or `range`; optionally carrying a semantic `note` that is appended to the attribute's
+  description and returned with its values — for attributes whose obvious reading misleads,
+  e.g. `BodyPartExamined` vs segmented anatomy).
 - [filters.py](../src/idc_api/core/filters.py) compiles a `CohortFilters` model into a
   parameterized `WHERE` clause. Attribute *names* are whitelisted + double-quoted (identifiers
   can't be bound); attribute *values* are always bound parameters.

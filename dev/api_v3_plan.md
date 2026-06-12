@@ -120,6 +120,13 @@ surgery, no webapp dependency, no shared-secret token.
   TB-scale download. (v2's cap was 65000 rows; keep a hard cap, small default page.)
 - **Discovery-first ordering** — schema tools + `get_attribute_values` exist so an agent
   grounds queries in real columns/values first (the IDC skill stresses this).
+- **Cross-table discoverability** — a filter-shaped question can secretly be a join: e.g.
+  *segmented anatomy* lives in `seg_index.SegmentedPropertyType_CodeMeanings`, while
+  `BodyPartExamined` only describes the source acquisition. Without explicit routing, an agent
+  grounds on the main `index`, finds a plausible value, and concludes the real metadata doesn't
+  exist (observed failure). Hence: `INSTRUCTIONS`/tool descriptions state the `<modality>_index`
+  naming convention and the rule "property not in `list_attributes` → check `list_tables`", and
+  attribute responses carry a `note` caveat at the decision point.
 - **MCP resources** — expose static reference (index schemas, "how to query IDC" guide) as
   MCP *resources* so agents can read them without burning tool calls.
 - **Structured errors** — typed error payloads with `is_error`; never leak stack traces.

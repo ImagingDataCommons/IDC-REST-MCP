@@ -73,9 +73,10 @@ citations / licenses) all operate on the *same* cohort filters.
 
 > **Cohort or SQL?** Use **Cohort** when your selection is attribute filters over series
 > metadata (equality/IN + ranges, on the one `index` table) — it's structured, validated, and
-> can't be malformed. Use **SQL** for anything *relational or aggregate*: joins, `GROUP BY`,
-> "X that *also has* Y", per-group counts. Don't force a relational question through the cohort
-> path, and don't reach for SQL when a plain filter will do. (Anything you can
+> can't be malformed. Use **SQL** for anything *relational or aggregate* — joins, `GROUP BY`,
+> "X that *also has* Y", per-group counts — and for properties only a specialized index holds
+> (e.g. the anatomy a segmentation contains, in `seg_index`). Don't force a relational question
+> through the cohort path, and don't reach for SQL when a plain filter will do. (Anything you can
 > `SELECT series_aws_url FROM index WHERE …` for *is* a manifest, so SQL can also produce
 > download URLs directly.)
 
@@ -86,7 +87,9 @@ points; pick by what you're asking:
 
 **A. Simple attribute filter** (e.g. *"breast MRI from NLST"*):
 1. **Ground values** — `list_attributes` (what you can filter on) → `get_attribute_values` (the
-   *real* values + correct casing). **Don't guess values.**
+   *real* values + correct casing). **Don't guess values.** If the property you need isn't among
+   the attributes (e.g. *what anatomy a segmentation contains*), it lives in a specialized
+   index — switch to path B.
 2. **Build & size** — `cohort/counts` (cheap) to sanity-check size, then `cohort/manifest` for
    the series page + download payload.
 
@@ -109,7 +112,10 @@ locally), and **be a good citizen** — check `licenses` (CC BY vs CC BY-NC) and
 
 `run_sql` / `list_tables` can reach the **bundled** tables plus the **specialized** indices,
 which are fetched from idc-index at build time and joined in SQL (the cohort filters still apply
-to `index` only). Join the specialized series-level indices to `index` on `SeriesInstanceUID`.
+to `index` only). Specialized indices are named `<modality>_index` after the DICOM Modality of
+the series they describe — if a Modality value is central to your question (SEG, CT, SM, …),
+check its index. Join them to `index` on `SeriesInstanceUID` (`clinical_index` is the exception:
+per-collection, keyed by `collection_id`).
 
 | Table(s) | Granularity / what it adds |
 |---|---|
@@ -117,7 +123,7 @@ to `index` only). Join the specialized series-level indices to `index` on `Serie
 | `collections_index` | one row per collection (curated metadata) |
 | `analysis_results_index` | one row per analysis result |
 | `version_metadata_index` / `prior_versions_index` | IDC release versions / removed series |
-| `seg_index`, `ann_index`, `ann_group_index`, `rtstruct_index` | segmentations / annotations / RT structures, with the **reference** to the image series they derive from (`segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`) |
+| `seg_index`, `ann_index`, `ann_group_index`, `rtstruct_index` | segmentations / annotations / RT structures: **what was segmented** (`SegmentedPropertyType_CodeMeanings` — `BodyPartExamined` reflects the source acquisition, not this) and the **reference** to the image series they derive from (`segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`) |
 | `ct_index`, `mr_index`, `pt_index` | per-modality acquisition parameters (slice thickness, kVp, TE/TR, injected dose…) |
 | `sm_index`, `sm_instance_index` | slide-microscopy (pathology) series / instance metadata |
 | `contrast_index`, `volume_geometry_index` | contrast agent / 3D volume geometry |
@@ -163,7 +169,7 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /docs
 | `GET /v3/collections/{id}` | Collection detail: counts, modalities, license breakdown |
 | `GET /v3/analysis_results` | Derived datasets (segmentations/annotations) |
 | `GET /v3/attributes` | Filterable attributes (name, type, term/range, categorical) |
-| `GET /v3/attributes/{attr}/values?limit=` | Distinct values + counts for an attribute |
+| `GET /v3/attributes/{attr}/values?limit=` | Distinct values + counts for an attribute, plus a `note` caveat when one applies (e.g. `BodyPartExamined` ≠ segmented anatomy) |
 | `GET /v3/tables` | Tables available to SQL |
 | `GET /v3/tables/{table}` | Column schema for a table |
 | `POST /v3/cohort/counts` | Distinct counts for a filter (cheap) |

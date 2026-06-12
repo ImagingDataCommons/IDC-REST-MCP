@@ -142,6 +142,11 @@ def table_schema(table: str) -> dict:
 #             AND across attributes (matching the v2 cohort semantics).
 #   - "range": numeric or lexically-ordered (ISO date) column, filtered by gte/lte.
 # ``categorical`` flags low-cardinality columns worth offering value-discovery for.
+# ``note`` is a semantic caveat surfaced wherever the attribute is described (list_attributes
+# descriptions and get_attribute_values responses) — use it when the obvious reading of an
+# attribute is wrong for some series and the right column lives elsewhere. Durable facts
+# belong upstream in the idc-index-data column descriptions (they flow in here on a pin bump);
+# keep notes to surface-routing guidance and trim them once upstream absorbs the substance.
 
 FILTERABLE_ATTRIBUTES: list[dict] = [
     {"name": "collection_id", "kind": "term", "categorical": True},
@@ -150,7 +155,17 @@ FILTERABLE_ATTRIBUTES: list[dict] = [
     {"name": "StudyInstanceUID", "kind": "term", "categorical": False},
     {"name": "SeriesInstanceUID", "kind": "term", "categorical": False},
     {"name": "Modality", "kind": "term", "categorical": True},
-    {"name": "BodyPartExamined", "kind": "term", "categorical": True},
+    {
+        "name": "BodyPartExamined",
+        "kind": "term",
+        "categorical": True,
+        "note": (
+            "Caution: this is the body region the source acquisition imaged — for derived "
+            "series (SEG/RTSTRUCT) it does NOT say what was segmented. Segmented anatomy "
+            "lives in seg_index.SegmentedPropertyType_CodeMeanings (join seg_index to index "
+            "via SQL)."
+        ),
+    },
     {"name": "Manufacturer", "kind": "term", "categorical": True},
     {"name": "ManufacturerModelName", "kind": "term", "categorical": True},
     {"name": "PatientSex", "kind": "term", "categorical": True},
@@ -187,6 +202,10 @@ def filterable_attributes() -> list[dict]:
     out = []
     for a in FILTERABLE_ATTRIBUTES:
         col = col_desc.get(a["name"], {})
+        description = col.get("description", "") or ""
+        note = a.get("note", "")
+        if note:
+            description = f"{description} {note}".strip()
         out.append(
             {
                 "name": a["name"],
@@ -194,10 +213,15 @@ def filterable_attributes() -> list[dict]:
                 "data_type": col.get("type", ""),
                 "kind": a["kind"],
                 "categorical": a["categorical"],
-                "description": col.get("description", "") or "",
+                "description": description,
             }
         )
     return out
+
+
+def attribute_note(attribute: str) -> str:
+    """The semantic caveat for an attribute, or '' if none applies."""
+    return _ATTR_BY_NAME.get(attribute, {}).get("note", "")
 
 
 def is_filterable(attribute: str) -> bool:

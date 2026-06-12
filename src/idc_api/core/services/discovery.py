@@ -153,4 +153,5 @@ class DiscoveryService:
             attribute=attribute,
             values=[AttributeValue(value=r["value"], count=r["count"]) for r in rows],
             truncated=truncated,
+            note=schema.attribute_note(attribute),
         )

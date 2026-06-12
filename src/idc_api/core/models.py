@@ -84,6 +84,7 @@ class AttributeValues(BaseModel):
     attribute: str
     values: list[AttributeValue]
     truncated: bool = False
+    note: str = Field("", description="Semantic caveat about this attribute, when one applies.")
 
 
 # --- schema discovery ---------------------------------------------------------------------
