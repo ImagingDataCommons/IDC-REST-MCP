@@ -274,6 +274,27 @@ download command."* Inspect/debug the tools with the
 npx @modelcontextprotocol/inspector uv run idc-mcp
 ```
 
+### Connecting to the hosted MCP server
+
+If the server is deployed over HTTP (the `--http` form above), point a remote-MCP client at
+`https://<service-url>/mcp` (note the `/mcp` path). The HTTP transport is **streamable-HTTP,
+configured stateless with plain-JSON responses** — each request is self-contained, so:
+
+- **Any spec-conformant remote-MCP client works**, and the service autoscales behind a plain
+  load balancer with no session affinity or sticky routing.
+- **No session handshake is needed to script it** — you can `POST` a `tools/list` or
+  `tools/call` directly (set `Accept: application/json, text/event-stream`); you don't have to
+  `initialize` first or carry an `Mcp-Session-Id` header.
+- **Session-bound MCP features are not available** (server→client sampling, elicitation,
+  resource subscriptions, streamed progress) — this server exposes only client-initiated tools
+  + static resources, so it doesn't use them.
+- **`download_cohort` can't write to your machine** over HTTP — retrieval returns a manifest +
+  URLs instead (see *Local vs hosted* below). Use the stdio config above when you want real
+  downloads.
+
+Operator-side detail (deploy command, host-header / DNS-rebinding settings, the autoscaling
+rationale) is in [deployment.md](../dev/deployment.md).
+
 ### Local vs hosted (downloads)
 
 An MCP server can run **locally** (stdio, on your machine — it can write files, so
