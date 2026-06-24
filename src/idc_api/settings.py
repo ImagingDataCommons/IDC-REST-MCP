@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     max_page_size: int = 5000
     manifest_hard_cap: int = 100_000  # max series rows a single manifest may enumerate
 
+    # --- Build / version ---
+    # Optional deploy-time build stamp (e.g. a short git SHA) appended to the package version
+    # advertised in the MCP initialize handshake (serverInfo.version). The package version alone
+    # is static across redeploys of the same release (e.g. 3.0.0.dev0), so set this at deploy
+    # time — IDC_API_BUILD=$(git rev-parse --short HEAD) — to get a version string that moves on
+    # every redeploy, making it possible to confirm which build a hosted instance is running.
+    build: str | None = None
+
     # --- Deployment mode ---
     # True only when the MCP server runs locally (stdio) on the user's machine, where it may
     # actually download files. Hosted REST / remote MCP keep this False (manifests only).

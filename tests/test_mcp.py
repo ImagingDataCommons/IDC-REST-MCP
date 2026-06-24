@@ -84,6 +84,40 @@ async def test_error_is_clean(server):
     assert "not found" in str(exc.value).lower()
 
 
+def test_server_version_is_our_build_not_sdk_fallback(server):
+    """initialize must advertise our package version, not the MCP SDK's own version.
+
+    The low-level server defaults version to None, which makes the handshake echo the `mcp`
+    SDK version — useless for tracking this server. We set it explicitly; guard that wiring
+    (and the private _mcp_server reach-in it depends on) against SDK changes.
+    """
+    from importlib.metadata import version
+
+    from idc_api.mcp.server import _server_version
+
+    advertised = server._mcp_server.version
+    assert advertised, "serverInfo.version unset → SDK-version fallback"
+    assert advertised == _server_version()
+    assert advertised.startswith(version("idc-api"))
+    assert advertised != version("mcp")
+    # the value the initialize handshake actually returns
+    opts = server._mcp_server.create_initialization_options()
+    assert opts.server_version == advertised
+
+
+def test_server_version_appends_build_stamp(monkeypatch):
+    """A deploy-time IDC_API_BUILD stamp is appended so the version moves on every redeploy."""
+    import idc_api.settings as settings_mod
+    from idc_api.mcp.server import _server_version
+
+    monkeypatch.setenv("IDC_API_BUILD", "deadbee")
+    settings_mod._settings = None  # drop cache so the stamped env is read
+    try:
+        assert _server_version().endswith("+deadbee")
+    finally:
+        settings_mod._settings = None  # don't leak the stamped settings to other tests
+
+
 async def test_resources(server):
     res = {str(r.uri) for r in await server.list_resources()}
     assert "idc://guide" in res

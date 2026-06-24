@@ -123,10 +123,23 @@ gcloud run deploy idc-mcp-v3 \
   --min-instances 0 --max-instances 5 \
   --command idc-mcp \
   --args=--http,--host,0.0.0.0,--port,8080 \
-  --set-env-vars IDC_API_DUCKDB_MEMORY_LIMIT=3GB,IDC_API_DUCKDB_THREADS=2
+  --set-env-vars IDC_API_DUCKDB_MEMORY_LIMIT=3GB,IDC_API_DUCKDB_THREADS=2,IDC_API_BUILD=$(git rev-parse --short HEAD)
 ```
 
 The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
+
+> **Which build is live?** The MCP `initialize` handshake reports `serverInfo.version`. Left
+> unset it would echo the MCP SDK's own version, so set `IDC_API_BUILD` (above) to a short git
+> SHA: the server appends it to the package version as a PEP 440 local segment (e.g.
+> `3.0.0.dev0+a1b2c3d`), giving a version string that moves on every redeploy. Read it back with
+> a `tools/list`-less initialize probe:
+>
+> ```bash
+> curl -s -X POST "$URL/mcp" -H 'Content-Type: application/json' \
+>   -H 'Accept: application/json, text/event-stream' \
+>   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
+>   | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+> ```
 
 > **Host-header / DNS-rebinding protection.** The MCP streamable-HTTP transport ships with
 > DNS-rebinding protection that allow-lists the `Host` header to localhost only, which would

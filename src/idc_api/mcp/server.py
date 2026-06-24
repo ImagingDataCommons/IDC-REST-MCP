@@ -17,6 +17,7 @@ import argparse
 import functools
 import json
 import logging
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -90,6 +91,23 @@ def _transport_security() -> TransportSecuritySettings:
     return TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 
+def _server_version() -> str:
+    """Version advertised in the MCP initialize handshake (serverInfo.version).
+
+    Base is the installed package version; when a deploy sets IDC_API_BUILD (e.g. a short git
+    SHA) it is appended as a PEP 440 local segment so the string moves on every redeploy — this
+    is how a caller confirms which build a hosted instance is actually running. Without setting
+    `version=`, FastMCP would fall back to the MCP SDK's own version, which says nothing about
+    this server.
+    """
+    try:
+        base = _pkg_version("idc-api")
+    except PackageNotFoundError:  # running from a source tree without an install
+        base = "0.0.0+unknown"
+    build = get_settings().build
+    return f"{base}+{build}" if build and "+" not in base else base
+
+
 mcp = FastMCP(
     "IDC (Imaging Data Commons)",
     instructions=INSTRUCTIONS,
@@ -97,6 +115,11 @@ mcp = FastMCP(
     json_response=True,
     transport_security=_transport_security(),
 )
+# FastMCP doesn't forward a version to the low-level server; left unset, the initialize
+# handshake reports the MCP SDK's own version (meaningless for tracking this server). Set it on
+# the underlying server so serverInfo.version reflects our build. No public accessor exists in
+# this SDK version, hence the _mcp_server reach-in.
+mcp._mcp_server.version = _server_version()
 ctx = AppContext()
 
 
