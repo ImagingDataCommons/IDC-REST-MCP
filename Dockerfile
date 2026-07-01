@@ -23,6 +23,12 @@ RUN uv pip install --system .
 ENV IDC_API_DUCKDB_PATH=/app/idc.duckdb
 RUN python -c "from idc_api.core.backend.duckdb_backend import build_database_file as b; b('/app/idc.duckdb')"
 
+# Drop root before serving: the app only ever reads /app/idc.duckdb, so a non-root user with no
+# write access anywhere but its own home is enough and limits what a code-execution bug could do.
+RUN useradd --create-home --shell /usr/sbin/nologin --uid 1000 appuser \
+    && chown appuser:appuser /app/idc.duckdb
+USER appuser
+
 ENV PORT=8080
 EXPOSE 8080
 
