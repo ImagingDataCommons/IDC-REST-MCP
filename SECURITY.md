@@ -1,0 +1,58 @@
+# Security Policy
+
+Scope: **IDC API v3** (`src/idc_api/`), the actively maintained REST API + MCP server. The
+legacy v2 API (`api/`) is not covered here — see [CLAUDE.md](CLAUDE.md).
+
+## Threat model, in one paragraph
+
+v3 serves the public NCI Imaging Data Commons index — an open, de-identified dataset, not
+secret data. The DuckDB backend is opened read-only, so no request can modify or delete it.
+The realistic risk is therefore **abuse of the server** (cost, availability, resource
+exhaustion) rather than data disclosure. Full rationale and the guarded-SQL threat model live in
+[dev/api_v3_plan.md](dev/api_v3_plan.md) → "Safety for the guarded SQL tool".
+
+## What's already in place
+
+- **Read-only, hardened DuckDB connection** — `enable_external_access=false`,
+  `autoload/autoinstall_known_extensions=false`, `lock_configuration=true` (frozen at connect
+  time). See `DuckDBBackend._hardening_config` in
+  [duckdb_backend.py](src/idc_api/core/backend/duckdb_backend.py). Regression-tested in
+  [tests_v3/test_backend_guards.py](tests_v3/test_backend_guards.py): non-SELECT statements,
+  multi-statement SQL, local/remote file access, and extension-loading/export statements
+  (`INSTALL`, `LOAD`, `COPY ... TO`, `SET`) are all rejected.
+- **Row/response caps** — `run_sql` and manifest endpoints clamp `max_rows` to a hard server
+  ceiling (`IDC_API_SQL_MAX_ROWS_CAP`, `IDC_API_MANIFEST_HARD_CAP`); a caller cannot request an
+  unbounded dump.
+- **Parameterized SQL everywhere we author it** — values are always bound (`?` placeholders);
+  identifiers that can't be bound (table/column names) are validated against allow-lists before
+  being interpolated. This is an architecture invariant — see [CLAUDE.md](CLAUDE.md) — enforced
+  in code review and spot-checked by `bandit` in CI (SQL-construction findings are individually
+  annotated with why the identifier is trusted, not blanket-suppressed).
+- **Structured audit logging** — every REST request and MCP tool call emits one JSON log line
+  (path/tool, status/outcome, duration, row count where applicable) to stdout, which Cloud Run
+  ships to Cloud Logging automatically. No SQL text, request bodies, or client IPs are logged at
+  the application level (Cloud Run's own request log already has caller IP, correlatable by
+  timestamp).
+- **CI checks** on every PR: `ruff` (lint), `bandit` (static security lint), `pip-audit`
+  (dependency CVEs), and the `tests_v3` suite.
+- **Non-root container** — `Dockerfile.v3` drops to an unprivileged user before serving.
+
+## Known residual risks (public deployment)
+
+| Risk | Status |
+|---|---|
+| No per-IP rate limiting in front of the service | Mitigated by Cloud Run `--max-instances`/`--concurrency` caps (see [dev/deployment.md](dev/deployment.md)); a dedicated edge rate limit (Cloud Armor / API Gateway) is an infra decision outside this repo. |
+| CORS allows all origins (`*`) | Intentional — the API serves only public, read-only data. Revisit if private data or auth is ever added. |
+| MCP DNS-rebinding protection defaults off | Documented trade-off for the unauthenticated hosted transport; operators who want it set `IDC_API_MCP_DNS_REBINDING_PROTECTION=true` plus an allowed-hosts list. |
+| DuckDB sandbox escape (0-day in DuckDB itself) | No code-level mitigation beyond the hardening config above and re-running the guard tests on every DuckDB upgrade; the container itself holds no secrets and reaches no internal network. |
+
+If you run your own fork or self-hosted deployment, you own its network exposure, auth (if you
+add non-public data), and update cadence — this document describes the project's own hosted
+service.
+
+## Reporting a vulnerability
+
+Please use GitHub's private
+["Report a vulnerability"](https://github.com/ImagingDataCommons/IDC-API/security/advisories/new)
+flow so it isn't publicly disclosed before a fix ships. For non-sensitive hardening suggestions
+(e.g. a missing test case), a regular GitHub issue is fine.

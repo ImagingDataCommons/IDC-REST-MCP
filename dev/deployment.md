@@ -92,6 +92,23 @@ Set `IDC_API_DUCKDB_THREADS` ≈ `--cpu` so concurrent requests don't oversubscr
 > pydantic-settings expects JSON (`["https://app.example.com"]`), which is awkward to quote in
 > gcloud. The default `["*"]` is appropriate for an open API.
 
+### Rate limiting / abuse protection
+
+`--allow-unauthenticated` means anyone can call `run_sql`/manifest endpoints; `--concurrency`
+and `--max-instances` above bound the *total* damage (cost, availability) a burst of traffic can
+do, but they are not a per-caller rate limit — one abusive IP can still consume the whole
+`--max-instances` budget and starve everyone else. Each query is already capped (statement
+timeout, row limits — see `IDC_API_SQL_*` above), but many queries at once still hurt. If abuse
+becomes a real concern, add a per-IP rate limit **at the edge**, not in the app:
+
+- **Cloud Armor** (attach to a Cloud Run + external Application Load Balancer setup) — rate-based
+  bans per IP, the standard GCP-native option.
+- **API Gateway / Apigee** in front of Cloud Run — if you also want API keys or quotas.
+
+Both sit in front of the container and need no code change. The structured request/tool-call
+logs (`idc_api.rest` / `idc_api.mcp` loggers, shipped to Cloud Logging automatically) are the
+signal to watch for "is someone abusing this" before reaching for either.
+
 ## 4. Verify
 
 ```bash
