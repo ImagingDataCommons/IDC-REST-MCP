@@ -185,5 +185,28 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
   balancer + Cloud CDN. Discovery responses change only per IDC release, so they cache well —
   add `Cache-Control` if you put a CDN in front. See [caching_and_cdn.md](caching_and_cdn.md)
   for a primer and the proposed (not-yet-implemented) cache-header enhancement.
-- **CI/CD:** wire steps 2–3 into a pipeline (Cloud Build trigger on tag, or extend the GitHub
-  Actions workflow with a deploy job using Workload Identity Federation).
+- **CI/CD:** [.github/workflows/v3-deploy.yml](../.github/workflows/v3-deploy.yml) automates
+  steps 2–3 as a manual (`workflow_dispatch`) job — pick `rest`, `mcp`, or `both` and it
+  builds, pushes, and deploys. It authenticates with a long-lived service account key rather
+  than Workload Identity Federation, so set two repo secrets first:
+  - `GCP_PROJECT_ID` — the target project ID.
+  - `GCP_SA_KEY` — a JSON key for a deploy service account with:
+    - `roles/run.admin` (deploy/update Cloud Run services)
+    - `roles/artifactregistry.writer` (push images to the repo created in step 1)
+    - `roles/cloudbuild.builds.editor` (submit Cloud Build jobs)
+    - `roles/iam.serviceAccountUser` (act as the Cloud Run runtime service account)
+
+  Create it once with:
+
+  ```bash
+  gcloud iam service-accounts create idc-api-deployer --display-name="IDC API v3 deployer"
+  SA="idc-api-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+  for role in roles/run.admin roles/artifactregistry.writer roles/cloudbuild.builds.editor roles/iam.serviceAccountUser; do
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$role"
+  done
+  gcloud iam service-accounts keys create sa-key.json --iam-account="$SA"
+  ```
+
+  Paste `sa-key.json`'s contents into the `GCP_SA_KEY` secret, then delete the local file. If
+  you'd rather avoid a long-lived key, swap the workflow's `google-github-actions/auth@v2` step
+  for Workload Identity Federation — the roles above stay the same.
