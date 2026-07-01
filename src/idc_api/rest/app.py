@@ -6,9 +6,12 @@ service. No business logic or SQL lives here — that all sits in ``idc_api.core
 
 from __future__ import annotations
 
+import json
+import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -37,6 +40,8 @@ from ..core.models import (
 from ..settings import get_settings
 
 API_PREFIX = "/v3"
+
+logger = logging.getLogger("idc_api.rest")
 
 
 # --- request bodies (response models are the shared core models) --------------------------
@@ -99,6 +104,26 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def _audit_log(request: Request, call_next):
+        # One structured line per request: path/status/duration only, no query params, request
+        # bodies (may contain caller SQL), or client IP — Cloud Run's own request log already
+        # has the caller IP, correlatable by timestamp.
+        start = time.monotonic()
+        entry = {"path": request.url.path, "method": request.method}
+        try:
+            response = await call_next(request)
+        except Exception:
+            entry["status"] = 500
+            entry["error"] = "unhandled"
+            raise
+        else:
+            entry["status"] = response.status_code
+            return response
+        finally:
+            entry["duration_ms"] = round((time.monotonic() - start) * 1000, 1)
+            logger.info(json.dumps(entry))
 
     @app.exception_handler(IDCAPIError)
     async def _idc_error_handler(_request, exc: IDCAPIError):

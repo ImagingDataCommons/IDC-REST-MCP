@@ -17,7 +17,9 @@ import argparse
 import functools
 import json
 import logging
+import time
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -123,20 +125,49 @@ mcp._mcp_server.version = _server_version()
 ctx = AppContext()
 
 
+def _log_call(tool: str, start: float, outcome: str, *, result: Any = None, error: str | None = None) -> None:
+    """One structured line per tool call. All tools share one HTTP endpoint on the hosted
+    transport, so the platform's own request log can't tell them apart — this is what makes
+    per-tool call volume/latency/errors visible for abuse detection. Never logs arguments (may
+    contain caller SQL) or result rows, only shape (row_count/truncated) already meant to be
+    caller-visible."""
+    entry: dict[str, Any] = {
+        "tool": tool,
+        "outcome": outcome,
+        "duration_ms": round((time.monotonic() - start) * 1000, 1),
+    }
+    if error is not None:
+        entry["error"] = error
+    if isinstance(result, dict):
+        rows = result.get("rows")
+        if isinstance(rows, list):
+            entry["row_count"] = len(rows)
+        if "truncated" in result:
+            entry["truncated"] = result["truncated"]
+    logger.info(json.dumps(entry))
+
+
 def guard(fn):
-    """Convert core errors into clean MCP tool errors; never leak tracebacks."""
+    """Convert core errors into clean MCP tool errors; never leak tracebacks. Also emits an
+    audit-log line per call (see _log_call)."""
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        start = time.monotonic()
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
         except IDCAPIError as exc:
+            _log_call(fn.__name__, start, "error", error=exc.code)
             raise ToolError(exc.message) from None
         except ToolError:
+            _log_call(fn.__name__, start, "error", error="tool_error")
             raise
         except Exception:  # noqa: BLE001
             logger.exception("Unhandled error in MCP tool %s", fn.__name__)
+            _log_call(fn.__name__, start, "error", error="internal")
             raise ToolError("Internal error while handling the request.") from None
+        _log_call(fn.__name__, start, "ok", result=result)
+        return result
 
     return wrapper
 
