@@ -84,7 +84,6 @@ target/
 *.patch
 .env
 *.env
-*.yaml
 openapi-appengine.yaml.20231026
 openapi-appengine*.yaml
 app.yaml
