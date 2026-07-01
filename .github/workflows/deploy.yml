@@ -5,7 +5,7 @@ name: v3 Deploy (Cloud Run)
 #   GCP_SA_KEY      - JSON key for a deploy service account (see dev/deployment.md for
 #                      required roles: roles/run.admin, roles/artifactregistry.writer,
 #                      roles/cloudbuild.builds.editor, roles/iam.serviceAccountUser,
-#                      roles/storage.objectAdmin, roles/serviceusage.serviceUsageConsumer)
+#                      roles/storage.admin, roles/serviceusage.serviceUsageConsumer)
 #   GCP_PROJECT_ID  - the target GCP project ID
 #
 # Assumes the one-time project setup (API enablement, Artifact Registry repo creation) in

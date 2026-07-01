@@ -195,9 +195,11 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
     - `roles/artifactregistry.writer` (push images to the repo created in step 1)
     - `roles/cloudbuild.builds.editor` (submit Cloud Build jobs)
     - `roles/iam.serviceAccountUser` (act as the Cloud Run runtime service account)
-    - `roles/storage.objectAdmin` (`gcloud builds submit` uploads source to the
-      auto-created `<PROJECT_ID>_cloudbuild` GCS bucket — without this you'll hit
-      "user is forbidden from accessing the bucket")
+    - `roles/storage.admin` (`gcloud builds submit` calls `storage.buckets.get` on the
+      auto-created `<PROJECT_ID>_cloudbuild` GCS bucket before uploading source — `roles/
+      storage.objectAdmin` covers object read/write but *not* that bucket-level check, and
+      is the one role here that's easy to under-scope; without `storage.admin` you'll hit
+      "user is forbidden from accessing the bucket" even with every other role granted)
     - `roles/serviceusage.serviceUsageConsumer` (base `serviceusage.services.use`
       permission needed to call any API as this project; Owner/Editor include it
       implicitly, this narrow role set doesn't)
@@ -208,12 +210,16 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
   gcloud iam service-accounts create idc-api-deployer --display-name="IDC API v3 deployer"
   SA="idc-api-deployer@$PROJECT_ID.iam.gserviceaccount.com"
   for role in roles/run.admin roles/artifactregistry.writer roles/cloudbuild.builds.editor \
-              roles/iam.serviceAccountUser roles/storage.objectAdmin \
+              roles/iam.serviceAccountUser roles/storage.admin \
               roles/serviceusage.serviceUsageConsumer; do
     gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$role"
   done
   gcloud iam service-accounts keys create sa-key.json --iam-account="$SA"
   ```
+
+  IAM bindings on Cloud Storage can take a minute or two to propagate — if `buckets.get`
+  still fails right after granting the role, wait ~60s and retry before assuming the role is
+  wrong.
 
   Paste `sa-key.json`'s contents into the `GCP_SA_KEY` secret, then delete the local file. If
   you'd rather avoid a long-lived key, swap the workflow's `google-github-actions/auth@v2` step
