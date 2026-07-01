@@ -111,8 +111,10 @@ class DiscoveryService:
 
     def _licenses_for(self, where: list[str], params: list) -> list[LicenseItem]:
         clause = " AND ".join(where) if where else "TRUE"
+        # `where` fragments are all call-site literals (e.g. "collection_id = ?"), never caller
+        # text; values are bound below.
         rows = self.backend.query(
-            f"SELECT license_short_name, count(DISTINCT SeriesInstanceUID) series, "
+            f"SELECT license_short_name, count(DISTINCT SeriesInstanceUID) series, "  # nosec B608
             f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {clause} "
             f"GROUP BY 1 ORDER BY series DESC",
             params,
@@ -143,8 +145,10 @@ class DiscoveryService:
                 f"Unknown attribute: {attribute!r}. Use list_attributes / get_table_schema."
             )
         limit = max(1, min(int(limit), 10000))
+        # `attribute` validated against schema.index_columns() above (invariant #4); `limit`
+        # is a clamped int.
         res = self.backend.query(
-            f'SELECT "{attribute}" AS value, count(*) AS count FROM index '
+            f'SELECT "{attribute}" AS value, count(*) AS count FROM index '  # nosec B608
             f'WHERE "{attribute}" IS NOT NULL GROUP BY 1 ORDER BY count DESC LIMIT {limit + 1}',
         )
         truncated = len(res.rows) > limit

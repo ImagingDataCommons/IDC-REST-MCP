@@ -15,8 +15,9 @@ class LicenseService:
 
     def get_licenses(self, filters: CohortFilters) -> LicensesResult:
         where, params = compile_filters(filters)
+        # `where` is compile_filters output: allow-listed columns, values bound below.
         rows = self.backend.query(
-            f"SELECT license_short_name, count(DISTINCT SeriesInstanceUID) series, "
+            f"SELECT license_short_name, count(DISTINCT SeriesInstanceUID) series, "  # nosec B608
             f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {where} "
             f"GROUP BY 1 ORDER BY series DESC",
             params,

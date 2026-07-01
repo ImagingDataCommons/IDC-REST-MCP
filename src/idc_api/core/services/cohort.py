@@ -38,8 +38,9 @@ class CohortService:
 
     def counts(self, filters: CohortFilters) -> CohortCounts:
         where, params = compile_filters(filters)
+        # `where` is compile_filters output: allow-listed columns, values bound below.
         row = self.backend.query(
-            f"SELECT count(DISTINCT PatientID) patients, "
+            f"SELECT count(DISTINCT PatientID) patients, "  # nosec B608
             f"count(DISTINCT StudyInstanceUID) studies, "
             f"count(DISTINCT SeriesInstanceUID) series, "
             f"COALESCE(sum(instanceCount),0) instances, "
@@ -71,8 +72,10 @@ class CohortService:
         series: list[SeriesManifestRow] = []
         if include_rows:
             cols = ", ".join(f'"{c}"' for c in _ROW_COLUMNS)
+            # `cols` is a fixed constant list (_ROW_COLUMNS); `where` is compile_filters output
+            # (allow-listed columns, values bound below); page/page_size are clamped ints.
             rows = self.backend.query(
-                f"SELECT {cols} FROM index WHERE {where} "
+                f"SELECT {cols} FROM index WHERE {where} "  # nosec B608
                 f"ORDER BY collection_id, PatientID, StudyInstanceUID, SeriesInstanceUID "
                 f"LIMIT {page_size} OFFSET {page * page_size}",
                 params,

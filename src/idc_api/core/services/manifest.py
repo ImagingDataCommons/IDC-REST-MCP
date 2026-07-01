@@ -30,8 +30,9 @@ class ManifestService:
 
     def _series_urls(self, where: str, params: list, limit: int) -> tuple[list[str], bool]:
         """Return up to ``limit`` ``s3://`` series URLs plus a truncation flag."""
+        # `where` is compile_filters output: allow-listed columns, values bound below.
         rows = self.backend.query(
-            f"SELECT series_aws_url FROM index WHERE {where} "
+            f"SELECT series_aws_url FROM index WHERE {where} "  # nosec B608
             f"ORDER BY series_aws_url LIMIT {limit + 1}",
             params,
         ).rows

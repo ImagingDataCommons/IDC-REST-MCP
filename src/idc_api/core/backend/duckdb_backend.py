@@ -147,13 +147,16 @@ def build_database_file(path: str, specialized: list[str] | None = None) -> None
     con = duckdb.connect(path)
     try:
         for table in schema.bundled_table_names():
+            # `table` is a build-time constant from the schema registry, never caller input.
             con.execute(
-                f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',
+                f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',  # nosec B608
                 [schema.parquet_path(table)],
             )
         for table, parquet in fetched.items():
+            # `table` here is one of the `specialized` names this function was called with
+            # (also build-time, see module docstring); the file path is bound, not interpolated.
             con.execute(
-                f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',
+                f'CREATE TABLE "{table}" AS SELECT * FROM read_parquet(?)',  # nosec B608
                 [parquet],
             )
         if clinical_dir:
@@ -187,8 +190,9 @@ def _register_clinical_tables(con: "duckdb.DuckDBPyConnection", clinical_dir: st
         if not any(entry.glob("*.parquet")):
             continue
         glob = str(entry / "*.parquet")
+        # `name` was just validated against _CLINICAL_TABLE_NAME_RE above; the glob is bound.
         con.execute(
-            f'CREATE TABLE "{CLINICAL_SCHEMA}"."{name}" AS SELECT * FROM read_parquet(?)',
+            f'CREATE TABLE "{CLINICAL_SCHEMA}"."{name}" AS SELECT * FROM read_parquet(?)',  # nosec B608
             [glob],
         )
 
@@ -295,7 +299,7 @@ class DuckDBBackend(QueryBackend):
         except FuturesTimeout as exc:
             try:
                 cur.interrupt()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cancel; the timeout error below fires regardless
                 pass
             raise QueryTimeoutError(
                 f"Query exceeded the {timeout_s:g}s statement timeout and was cancelled."
@@ -344,8 +348,10 @@ class DuckDBBackend(QueryBackend):
         timeout_s = timeout_s if timeout_s is not None else self._settings.sql_timeout_seconds
         inner = _strip_sql_comments(sql).strip().rstrip(";").strip()
         # Engine-level row cap: wrap and fetch one extra row to detect truncation. The
-        # read-only connection + disabled external access are the real safety boundary.
-        wrapped = f"SELECT * FROM (\n{inner}\n) AS _idc_sub LIMIT {max_rows + 1}"
+        # read-only connection + disabled external access are the real safety boundary — `inner`
+        # is the caller's own arbitrary SELECT by design (invariant #5), not string-built from
+        # untrusted fragments, and `max_rows` was clamped to an int just above.
+        wrapped = f"SELECT * FROM (\n{inner}\n) AS _idc_sub LIMIT {max_rows + 1}"  # nosec B608
         try:
             cols, rows = self._execute(wrapped, None, timeout_s)
         except duckdb.Error as exc:
@@ -369,5 +375,5 @@ class DuckDBBackend(QueryBackend):
     def close(self) -> None:
         try:
             self._con.close()
-        except Exception:
+        except Exception:  # nosec B110 - best-effort cleanup on shutdown; nothing to act on
             pass

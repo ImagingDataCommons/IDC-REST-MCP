@@ -131,7 +131,7 @@ class ClinicalService:
         # Identifier validated against the registered clinical set above (never a raw value);
         # double-quoted because identifiers can't be bound as parameters (invariant #4).
         result = self.backend.query(
-            f'SELECT * FROM "{schema.CLINICAL_SCHEMA}"."{table}"',
+            f'SELECT * FROM "{schema.CLINICAL_SCHEMA}"."{table}"',  # nosec B608
             None,
             max_rows=max_rows,
         )

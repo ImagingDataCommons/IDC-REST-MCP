@@ -48,5 +48,11 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check src tests_v3
 
+      - name: Security lint (bandit)
+        run: uv run bandit -q -r src/idc_api
+
+      - name: Dependency vulnerability scan (pip-audit)
+        run: uv run pip-audit
+
       - name: Test (pytest)
         run: uv run pytest tests_v3 -q

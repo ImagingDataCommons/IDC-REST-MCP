@@ -120,7 +120,9 @@ def include_token(included: list[str]) -> str:
         return "base"
     if set(included) == set(SPECIALIZED_TABLES):
         return "all"
-    digest = hashlib.sha1(",".join(sorted(included)).encode()).hexdigest()[:8]
+    digest = hashlib.sha1(",".join(sorted(included)).encode(), usedforsecurity=False).hexdigest()[
+        :8
+    ]
     return f"sub-{digest}"
 
 

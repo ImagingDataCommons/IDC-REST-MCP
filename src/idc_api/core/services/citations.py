@@ -45,7 +45,8 @@ class CitationsService:
         dataset_dois = [
             r["source_DOI"]
             for r in self.backend.query(
-                f"SELECT DISTINCT source_DOI FROM index WHERE {where} "
+                # `where` is compile_filters output: allow-listed columns, values bound below.
+                f"SELECT DISTINCT source_DOI FROM index WHERE {where} "  # nosec B608
                 f"AND source_DOI IS NOT NULL AND source_DOI <> ''",
                 params,
             ).rows
