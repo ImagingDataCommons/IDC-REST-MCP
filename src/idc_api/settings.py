@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -64,6 +66,15 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = ["*"]
     host: str = "127.0.0.1"
     port: int = 8000
+
+    # --- Audit logging ---
+    # How much of a caller's SQL (run_sql tool / POST /v3/sql) lands in the structured audit
+    # log: "snippet" logs the first sql_log_chars characters -- readable, useful for diagnosing
+    # a slow/abusive query; "hash" logs a short digest instead -- lets you correlate repeated
+    # identical queries across log lines without putting query text in logs at all. IDC data is
+    # public with no auth, so this is about log-line hygiene, not confidentiality.
+    sql_log_mode: Literal["snippet", "hash"] = "snippet"
+    sql_log_chars: int = 200
 
 
 _settings: Settings | None = None

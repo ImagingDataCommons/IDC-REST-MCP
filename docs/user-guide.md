@@ -442,6 +442,8 @@ Environment variables (prefix `IDC_API_`):
 | `ENABLE_LOCAL_DOWNLOAD` | `false` | Allow `download` to write files locally |
 | `CORS_ALLOW_ORIGINS` | — | Allowed CORS origins (REST) |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | REST bind address |
+| `SQL_LOG_MODE` | `snippet` | How `run_sql`/`POST /v3/sql` queries appear in the structured audit log: `snippet` (readable, capped) or `hash` (a short digest, no query text at all) |
+| `SQL_LOG_CHARS` | `200` | Snippet length when `SQL_LOG_MODE=snippet` |
 
 ---
 

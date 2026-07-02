@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import functools
+import hashlib
+import inspect
 import json
 import logging
 import time
@@ -125,17 +127,37 @@ mcp._mcp_server.version = _server_version()
 ctx = AppContext()
 
 
-def _log_call(tool: str, start: float, outcome: str, *, result: Any = None, error: str | None = None) -> None:
+def _format_sql(sql: str) -> str:
+    """Render `sql` for the audit log per IDC_API_SQL_LOG_MODE: a capped readable snippet
+    (default), or a short digest that lets callers correlate repeated identical queries without
+    putting query text in logs at all."""
+    s = get_settings()
+    if s.sql_log_mode == "hash":
+        return "sha256:" + hashlib.sha256(sql.encode()).hexdigest()[:12]
+    return sql[: s.sql_log_chars]
+
+
+def _log_call(
+    tool: str,
+    start: float,
+    outcome: str,
+    *,
+    result: Any = None,
+    error: str | None = None,
+    sql: str | None = None,
+) -> None:
     """One structured line per tool call. All tools share one HTTP endpoint on the hosted
     transport, so the platform's own request log can't tell them apart — this is what makes
-    per-tool call volume/latency/errors visible for abuse detection. Never logs arguments (may
-    contain caller SQL) or result rows, only shape (row_count/truncated) already meant to be
-    caller-visible."""
+    per-tool call volume/latency/errors visible for abuse detection. Result rows are never
+    logged, only shape (row_count/truncated) already meant to be caller-visible; `sql` (when the
+    tool takes one) is rendered per _format_sql."""
     entry: dict[str, Any] = {
         "tool": tool,
         "outcome": outcome,
         "duration_ms": round((time.monotonic() - start) * 1000, 1),
     }
+    if sql is not None:
+        entry["sql"] = _format_sql(sql)
     if error is not None:
         entry["error"] = error
     if isinstance(result, dict):
@@ -150,23 +172,28 @@ def _log_call(tool: str, start: float, outcome: str, *, result: Any = None, erro
 def guard(fn):
     """Convert core errors into clean MCP tool errors; never leak tracebacks. Also emits an
     audit-log line per call (see _log_call)."""
+    sig = inspect.signature(fn)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         start = time.monotonic()
         try:
+            sql = sig.bind_partial(*args, **kwargs).arguments.get("sql")
+        except TypeError:
+            sql = None
+        try:
             result = fn(*args, **kwargs)
         except IDCAPIError as exc:
-            _log_call(fn.__name__, start, "error", error=exc.code)
+            _log_call(fn.__name__, start, "error", error=exc.code, sql=sql)
             raise ToolError(exc.message) from None
         except ToolError:
-            _log_call(fn.__name__, start, "error", error="tool_error")
+            _log_call(fn.__name__, start, "error", error="tool_error", sql=sql)
             raise
         except Exception:  # noqa: BLE001
             logger.exception("Unhandled error in MCP tool %s", fn.__name__)
-            _log_call(fn.__name__, start, "error", error="internal")
+            _log_call(fn.__name__, start, "error", error="internal", sql=sql)
             raise ToolError("Internal error while handling the request.") from None
-        _log_call(fn.__name__, start, "ok", result=result)
+        _log_call(fn.__name__, start, "ok", result=result, sql=sql)
         return result
 
     return wrapper

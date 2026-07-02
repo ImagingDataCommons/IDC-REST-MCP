@@ -30,9 +30,13 @@ exhaustion) rather than data disclosure. Full rationale and the guarded-SQL thre
   annotated with why the identifier is trusted, not blanket-suppressed).
 - **Structured audit logging** — every REST request and MCP tool call emits one JSON log line
   (path/tool, status/outcome, duration, row count where applicable) to stdout, which Cloud Run
-  ships to Cloud Logging automatically. No SQL text, request bodies, or client IPs are logged at
-  the application level (Cloud Run's own request log already has caller IP, correlatable by
-  timestamp).
+  ships to Cloud Logging automatically. For the guarded SQL endpoint/tool, a rendering of the
+  query is included — by default the first 200 chars (`IDC_API_SQL_LOG_MODE=snippet`), or a
+  short digest instead (`IDC_API_SQL_LOG_MODE=hash`) if you'd rather correlate repeated queries
+  without putting query text in logs. Either way this is public-schema SQL the caller wrote
+  themselves, not sensitive data — the cap is about log-line hygiene (one pathological query
+  can't inflate a line), not confidentiality. Client IPs are not logged at the application level
+  (Cloud Run's own request log already has caller IP, correlatable by timestamp).
 - **CI checks** on every PR: `ruff` (lint), `bandit` (static security lint), `pip-audit`
   (dependency CVEs), and the `tests_v3` suite.
 - **Non-root container** — `Dockerfile.v3` drops to an unprivileged user before serving.

@@ -6,6 +6,7 @@ service. No business logic or SQL lives here — that all sits in ``idc_api.core
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -40,8 +41,18 @@ from ..core.models import (
 from ..settings import get_settings
 
 API_PREFIX = "/v3"
+_SQL_PATH = f"{API_PREFIX}/sql"
 
 logger = logging.getLogger("idc_api.rest")
+
+
+def _format_sql(sql: str, settings) -> str:
+    """Render `sql` for the audit log per IDC_API_SQL_LOG_MODE: a capped readable snippet
+    (default), or a short digest that lets callers correlate repeated identical queries without
+    putting query text in logs at all."""
+    if settings.sql_log_mode == "hash":
+        return "sha256:" + hashlib.sha256(sql.encode()).hexdigest()[:12]
+    return sql[: settings.sql_log_chars]
 
 
 # --- request bodies (response models are the shared core models) --------------------------
@@ -107,11 +118,20 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def _audit_log(request: Request, call_next):
-        # One structured line per request: path/status/duration only, no query params, request
-        # bodies (may contain caller SQL), or client IP — Cloud Run's own request log already
-        # has the caller IP, correlatable by timestamp.
+        # One structured line per request: path/status/duration, plus the SQL (rendered per
+        # IDC_API_SQL_LOG_MODE) for the guarded SQL endpoint. No query params or client IP —
+        # Cloud Run's own request log already has the caller IP, correlatable by timestamp.
+        # Reading the body here is safe: Starlette caches it, so the route handler's own
+        # Pydantic parsing below reuses the cached bytes instead of re-reading the stream.
         start = time.monotonic()
         entry = {"path": request.url.path, "method": request.method}
+        if request.url.path == _SQL_PATH and request.method == "POST":
+            try:
+                sql = json.loads(await request.body()).get("sql")
+                if isinstance(sql, str):
+                    entry["sql"] = _format_sql(sql, settings)
+            except Exception:  # nosec B110 - malformed body; the route's own validation reports it
+                pass
         try:
             response = await call_next(request)
         except Exception:
