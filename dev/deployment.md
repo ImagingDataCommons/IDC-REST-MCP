@@ -197,21 +197,21 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
   balancer + Cloud CDN. Discovery responses change only per IDC release, so they cache well —
   add `Cache-Control` if you put a CDN in front. See [caching_and_cdn.md](caching_and_cdn.md)
   for a primer and the proposed (not-yet-implemented) cache-header enhancement.
-- **CI/CD:** deployment is automated across dev / test / production tiers with GitHub
-  Actions — see [CI/CD: dev / test / production tiers](#cicd-dev--test--production-tiers) below.
+- **CI/CD:** deployment is automated across dev / test / prod tiers with GitHub
+  Actions — see [CI/CD: dev / test / prod tiers](#cicd-dev--test--prod-tiers) below.
   The manual steps 2–3 above remain the ground truth for what those workflows run and for
   first-time / out-of-band deploys.
 
-## CI/CD: dev / test / production tiers
+## CI/CD: dev / test / prod tiers
 
 Three GitHub Actions workflows share one reusable deploy job and use **GitHub Environments**
-(`dev`, `test`, `production`) for per-tier config and governance. Each tier is a **separate GCP
+(`dev`, `test`, `prod`) for per-tier config and governance. Each tier is a **separate GCP
 project** — matching the legacy IDC-API (CircleCI) convention of one project per tier.
 
 **Build once, promote the same digest.** Because the read-only DuckDB index is baked into the
 image *at build time*, the image is built **once** (on merge to `main`), pushed to a single
 shared Artifact Registry, and the *same immutable `@sha256:` digest* is promoted dev → test →
-production. No tier rebuilds, so test validates the exact bytes production will run. Pinning
+prod. No tier rebuilds, so test validates the exact bytes prod will run. Pinning
 `idc-index` in [pyproject.toml](../pyproject.toml) makes a rebuild *deterministic*; promoting one
 digest makes rebuilds *unnecessary* — a stronger guarantee.
 
@@ -219,7 +219,7 @@ digest makes rebuilds *unnecessary* — a stronger guarantee.
 |---|---|---|
 | [build-and-deploy-dev.yml](../.github/workflows/build-and-deploy-dev.yml) | push to `main` (image paths) or manual | build + push image, deploy to **dev** |
 | [promote.yml](../.github/workflows/promote.yml) (dispatch) | manual, pick a build SHA | promote that digest to **test** |
-| [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | promote the tagged commit's digest to **production** (behind the required-reviewer gate) |
+| [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | promote the tagged commit's digest to **prod** (behind the required-reviewer gate) |
 | [deploy.yml](../.github/workflows/deploy.yml) | reusable (`workflow_call`) | the shared deploy job the two callers invoke |
 
 The image for a promoted SHA must already exist in the shared registry (i.e. it built on
@@ -242,17 +242,17 @@ with `roles/cloudbuild.builds.editor`, `roles/artifactregistry.writer`, `roles/s
 `roles/serviceusage.serviceUsageConsumer`. If `BUILD_PROJECT_ID` is the dev project, this can be
 the dev deployer key from step 2.
 
-**2. One GitHub Environment per tier** (`dev`, `test`, `production`). For each, add:
+**2. One GitHub Environment per tier** (`dev`, `test`, `prod`). For each, add:
 
 - Environment **Secrets**: `GCP_PROJECT_ID` and `GCP_SA_KEY` — a deployer SA in *that tier's*
   project (roles below; create with the snippet, once per project).
 - Environment **Variables** (all optional — the workflow applies the same defaults as the manual
   deploy above if unset): `REGION`, `CPU`, `MEMORY`, `CONCURRENCY`, `MIN_INSTANCES`,
   `MAX_INSTANCES`, `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS`. Run prod hotter than dev by setting
-  e.g. `MIN_INSTANCES=1` and a higher `MAX_INSTANCES` on `production` only.
-- On **`production`**: add a *Required reviewers* protection rule (and, optionally, restrict
+  e.g. `MIN_INSTANCES=1` and a higher `MAX_INSTANCES` on `prod` only.
+- On **`prod`**: add a *Required reviewers* protection rule (and, optionally, restrict
   deployments to tags). This is the approval gate — the prod deploy job pauses until a reviewer
-  approves. The reusable job declares `environment: production`, so the gate fires even though
+  approves. The reusable job declares `environment: prod`, so the gate fires even though
   the deploy runs inside `deploy.yml`.
 
 Per-tier deployer SA (the same roles as the manual deploy — the tier no longer *builds*, but

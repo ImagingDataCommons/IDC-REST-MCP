@@ -3,10 +3,10 @@ name: Deploy to Cloud Run (reusable)
 # Reusable deploy job shared by build-and-deploy-dev.yml (dev) and promote.yml (test / prod).
 # It never builds — it promotes an image that was already built and pushed to the shared
 # Artifact Registry, deploying the SAME immutable digest to whichever tier is requested. This
-# is what guarantees test validates the exact bytes production runs (the DuckDB index is baked
+# is what guarantees test validates the exact bytes prod runs (the DuckDB index is baked
 # into the image at build time, so a per-tier rebuild could drift).
 #
-# Per-tier config comes from the GitHub Environment named by `environment` (dev/test/production):
+# Per-tier config comes from the GitHub Environment named by `environment` (dev/test/prod):
 #   Secrets:   GCP_PROJECT_ID, GCP_SA_KEY   (deployer SA for that tier's GCP project)
 #   Variables: REGION, CPU, MEMORY, CONCURRENCY, MIN_INSTANCES, MAX_INSTANCES,
 #              DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS   (all optional; defaults below)
@@ -17,7 +17,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: "Target GitHub Environment / tier (dev | test | production)"
+        description: "Target GitHub Environment / tier (dev | test | prod)"
         required: true
         type: string
       build_sha:

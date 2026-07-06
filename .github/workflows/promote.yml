@@ -1,8 +1,8 @@
-name: Promote (test / production)
+name: Promote (test / prod)
 
 # Promote an already-built image (no rebuild) to a higher tier:
 #   - Manual workflow_dispatch  -> test  (pick the short SHA of a green dev build)
-#   - Push a v* tag             -> production (gated by the `production` environment's
+#   - Push a v* tag             -> prod (gated by the `prod` environment's
 #                                  required-reviewer rule; deploys the tagged commit's build)
 #
 # The image for the chosen SHA must already exist in the shared registry, i.e. it must have gone
@@ -16,7 +16,7 @@ on:
       environment:
         description: "Target tier"
         type: choice
-        options: [test, production]
+        options: [test, prod]
         default: test
       build_sha:
         description: "Short commit SHA of an already-built image to promote"
@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
             # Tag push: GITHUB_SHA is the tagged commit, whose image was built on main.
-            ENVIRONMENT=production
+            ENVIRONMENT=prod
             BUILD_SHA=${GITHUB_SHA:0:7}
             TARGET=both
           else
