@@ -215,6 +215,20 @@ prod. No tier rebuilds, so test validates the exact bytes prod will run. Pinning
 `idc-index` in [pyproject.toml](../pyproject.toml) makes a rebuild *deterministic*; promoting one
 digest makes rebuilds *unnecessary* — a stronger guarantee.
 
+### Coming from the CircleCI pipeline?
+
+If you maintained the legacy `.circleci/config.yml`, here is the mental-model mapping. The two
+things that move the most: **tier selection** and **the approval gate** both leave the pipeline
+file — the first becomes the *trigger*, the second becomes an *Environment setting*.
+
+| Legacy CircleCI | Here (GitHub Actions) |
+|---|---|
+| Branch name picks the tier (`idc-prod` / `idc-uat` / `idc-test` / `master`) | The **trigger** picks the tier: push `main` → dev, manual dispatch → test, `v*` tag → prod |
+| Per-tier secrets as context env vars (`DEPLOYMENT_*_IDC_<TIER>`) | Per-tier **Environment** Secrets/Variables (`GCP_PROJECT_ID`, `GCP_SA_KEY`, sizing) |
+| A `type: approval` hold **job in `config.yml`** gates the deploy | A **Required reviewers** rule on the `prod` **Environment**, set in repo *Settings* — **not** in any YAML (see [Configuring the prod approval gate](#configuring-the-prod-approval-gate)) |
+| Deploy auto-runs on every matching branch | dev auto-runs; test is manual; prod waits for reviewer approval |
+| Rebuild per branch | Build once on `main`, promote the same digest |
+
 | Workflow | Trigger | Result |
 |---|---|---|
 | [build-and-deploy-dev.yml](../.github/workflows/build-and-deploy-dev.yml) | push to `main` (image paths) or manual | build + push image, deploy to **dev** |
@@ -250,10 +264,9 @@ the dev deployer key from step 2.
   deploy above if unset): `REGION`, `CPU`, `MEMORY`, `CONCURRENCY`, `MIN_INSTANCES`,
   `MAX_INSTANCES`, `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS`. Run prod hotter than dev by setting
   e.g. `MIN_INSTANCES=1` and a higher `MAX_INSTANCES` on `prod` only.
-- On **`prod`**: add a *Required reviewers* protection rule (and, optionally, restrict
-  deployments to tags). This is the approval gate — the prod deploy job pauses until a reviewer
-  approves. The reusable job declares `environment: prod`, so the gate fires even though
-  the deploy runs inside `deploy.yml`.
+- On **`prod`**: add the **Required reviewers** approval gate — the step-by-step is in
+  [Configuring the prod approval gate](#configuring-the-prod-approval-gate) below. (Optionally
+  also restrict its deployment branches/tags to `v*`.)
 
 Per-tier deployer SA (the same roles as the manual deploy — the tier no longer *builds*, but
 `run.admin` + `iam.serviceAccountUser` deploy, and `artifactregistry.reader` on the shared
@@ -304,6 +317,39 @@ gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" \
 
 IAM bindings can take a minute or two to propagate — if a read/`buckets.get` fails right after
 granting, wait ~60s and retry before assuming the role is wrong.
+
+### Configuring the prod approval gate
+
+**This is the piece with no `.yml` equivalent — it lives entirely in repo Settings.** In CircleCI
+you gated a deploy by adding a `type: approval` hold *job* to `config.yml`. GitHub Actions works
+the other way round: the gate is a property of the **Environment**, and the workflow only *opts
+in* by naming that environment. There is deliberately **no way to require reviewers from the
+workflow file** — so a pull request can't weaken it. All [deploy.yml](../.github/workflows/deploy.yml)
+does is declare `environment: prod` on its deploy job; the rule itself you set here, once:
+
+1. Repo → **Settings → Environments**. Create an environment named exactly **`prod`** if it
+   doesn't exist (the name must match what [promote.yml](../.github/workflows/promote.yml) passes
+   on a `v*` tag).
+2. Tick **Required reviewers** and add the users/teams allowed to approve prod deploys (up to 6).
+   Optionally also tick **Prevent self-review** so the person who cut the tag can't approve their
+   own deploy.
+3. *(Optional)* Under **Deployment branches and tags** choose **Selected** and add the `v*`
+   pattern, so only tag-triggered runs can ever target `prod`.
+4. **Save protection rules.**
+
+**What this looks like at deploy time.** Pushing a `v*` tag starts `promote.yml`: the `resolve`
+job runs, then the reusable deploy job — bound to `prod` — **pauses before any deploy step**, in a
+*"Waiting — review required"* state. A designated reviewer opens the run in the **Actions** tab,
+clicks **Review deployments → prod → Approve and deploy** (or Reject). Only on approval do the
+digest-resolve and `gcloud run deploy` steps run — and the `prod` secrets aren't exposed to the
+job until then either. dev and test have no such rule, so they deploy without a pause. GitHub also
+records who approved each prod deployment under the repo's **Deployments** view.
+
+> ⚠️ **The gate is opt-in and off by default.** If you skip this — e.g. the `prod` environment
+> exists but has no Required-reviewers rule — `environment: prod` still resolves and the prod
+> deploy runs **unattended**. The YAML cannot enforce the gate; only this setting does. (Required
+> reviewers are free on **public** repos, which this is; on private/internal repos they need
+> GitHub Pro/Team/Enterprise.)
 
 > **Long-lived keys vs WIF.** These workflows authenticate with JSON service-account keys
 > (`google-github-actions/auth@v3` + `credentials_json`). To avoid long-lived keys, swap each
