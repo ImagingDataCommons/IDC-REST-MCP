@@ -54,6 +54,7 @@ uv run --directory . pytest tests/test_backend_guards.py -q   # one file
 | [test_mcp.py](../tests/test_mcp.py) | Tools registered, prescriptive descriptions, calls, clean errors, resources |
 | [test_parity.py](../tests/test_parity.py) | **Parity:** core service == REST == MCP for the same filter |
 | [test_specialized_indices.py](../tests/test_specialized_indices.py) | Specialized indices fetched + exposed to SQL + joinable to `index` |
+| [test_clinical.py](../tests/test_clinical.py) | Clinical tables registered under the `clinical` schema, hidden from `list_tables`, discoverable/readable, joinable to `index` |
 
 Fixtures live in [tests/conftest.py](../tests/conftest.py): `ctx` (the core
 `AppContext`), `client` (FastAPI `TestClient`), and `parse_mcp` (normalizes a FastMCP
@@ -87,7 +88,7 @@ src/idc_api/
     backend/
       base.py            # QueryBackend interface
       duckdb_backend.py  # read-only DuckDB over idc-index Parquet
-    services/            # discovery, cohort, query, manifest, viewer, citations, licenses, download
+    services/            # discovery, cohort, query, clinical, manifest, viewer, citations, licenses, download
   rest/app.py            # FastAPI app + routes
   mcp/server.py          # FastMCP tools + resources + entrypoint
 tests/                   # pytest suite
@@ -197,12 +198,16 @@ Environment variables (prefix `IDC_API_`), defined in
 | `DUCKDB_PATH` | (built at runtime) | Use a prebuilt read-only DuckDB file (image bakes one) |
 | `INCLUDE_INDICES` | all | Specialized indices to fetch+build: `all`, `none`, or a comma list. Ignored when `DUCKDB_PATH` is set |
 | `DUCKDB_MEMORY_LIMIT` / `DUCKDB_THREADS` / `DUCKDB_TEMP_DIRECTORY_SIZE` | 4GB / 4 / 4GB | Engine caps |
-| `SQL_MAX_ROWS` | 5000 | Row cap for `run_sql` |
+| `SQL_MAX_ROWS` | 5000 | Default row cap for `run_sql` when the caller omits `max_rows` |
+| `SQL_MAX_ROWS_CAP` | 10000 | Hard ceiling: a caller-supplied `max_rows` is clamped to this |
 | `SQL_TIMEOUT_SECONDS` | 30 | Statement timeout |
 | `DEFAULT_PAGE_SIZE` / `MAX_PAGE_SIZE` | 100 / 5000 | Manifest paging |
 | `MANIFEST_HARD_CAP` | 100000 | Max series a single manifest enumerates |
 | `ENABLE_LOCAL_DOWNLOAD` | false | Allow real downloads (stdio MCP sets this) |
 | `CORS_ALLOW_ORIGINS` / `HOST` / `PORT` | `["*"]` / 127.0.0.1 / 8000 | REST serving |
+| `SQL_LOG_MODE` / `SQL_LOG_CHARS` | snippet / 200 | How `run_sql`/`POST /v3/sql` renders in the audit log |
+| `BUILD` | (unset) | Deploy stamp appended to the MCP `serverInfo.version` |
+| `MCP_DNS_REBINDING_PROTECTION` / `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` | false / `[]` / `[]` | MCP HTTP transport Host/Origin allow-list |
 
 ## Pitfalls & gotchas
 

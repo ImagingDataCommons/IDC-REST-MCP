@@ -89,7 +89,7 @@ output are structurally identical — this is what the parity test enforces.
 
 ### `core/schema.py` and `core/filters.py`
 - [schema.py](../src/idc_api/core/schema.py) is the single source of truth for which tables
-  exist (`BUNDLED_TABLES`), their column metadata (sourced from
+  exist (`BUNDLED_TABLES` + `SPECIALIZED_TABLES`), their column metadata (sourced from
   `idc_index_data.INDEX_METADATA`), and the curated `FILTERABLE_ATTRIBUTES` (each tagged
   `term` or `range`; optionally carrying a semantic `note` that is appended to the attribute's
   description and returned with its values — for attributes whose obvious reading misleads,
@@ -200,8 +200,9 @@ rationale.
   REST route in [`rest/app.py`](../src/idc_api/rest/app.py) and an MCP tool in
   [`mcp/server.py`](../src/idc_api/mcp/server.py). Add a parity test. (Step-by-step in the
   developer guide.)
-- **Add an index table** (Phase 2) → register it in `schema.BUNDLED_TABLES` (and ensure it's
-  fetched), expose targeted service methods/tools. Schema discovery picks it up automatically.
+- **Add an index table** → register it in `schema.SPECIALIZED_TABLES` (the SQL name equals its
+  `idc_index_data.INDEX_METADATA` key; it's fetched from idc-index at build time), optionally
+  expose targeted service methods/tools. Schema discovery picks it up automatically.
 - **Add a backend** (Phase 3) → implement `QueryBackend` (3 methods) in
   `core/backend/bigquery_backend.py`, select it in `AppContext`. Services and adapters are
   untouched.
