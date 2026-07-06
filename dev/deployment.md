@@ -197,42 +197,115 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
   balancer + Cloud CDN. Discovery responses change only per IDC release, so they cache well —
   add `Cache-Control` if you put a CDN in front. See [caching_and_cdn.md](caching_and_cdn.md)
   for a primer and the proposed (not-yet-implemented) cache-header enhancement.
-- **CI/CD:** [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) automates
-  steps 2–3 as a manual (`workflow_dispatch`) job — pick `rest`, `mcp`, or `both` and it
-  builds, pushes, and deploys. It authenticates with a long-lived service account key rather
-  than Workload Identity Federation, so set two repo secrets first:
-  - `GCP_PROJECT_ID` — the target project ID.
-  - `GCP_SA_KEY` — a JSON key for a deploy service account with:
-    - `roles/run.admin` (deploy/update Cloud Run services)
-    - `roles/artifactregistry.writer` (push images to the repo created in step 1)
-    - `roles/cloudbuild.builds.editor` (submit Cloud Build jobs)
-    - `roles/iam.serviceAccountUser` (act as the Cloud Run runtime service account)
-    - `roles/storage.admin` (`gcloud builds submit` calls `storage.buckets.get` on the
-      auto-created `<PROJECT_ID>_cloudbuild` GCS bucket before uploading source — `roles/
-      storage.objectAdmin` covers object read/write but *not* that bucket-level check, and
-      is the one role here that's easy to under-scope; without `storage.admin` you'll hit
-      "user is forbidden from accessing the bucket" even with every other role granted)
-    - `roles/serviceusage.serviceUsageConsumer` (base `serviceusage.services.use`
-      permission needed to call any API as this project; Owner/Editor include it
-      implicitly, this narrow role set doesn't)
+- **CI/CD:** deployment is automated across dev / test / production tiers with GitHub
+  Actions — see [CI/CD: dev / test / production tiers](#cicd-dev--test--production-tiers) below.
+  The manual steps 2–3 above remain the ground truth for what those workflows run and for
+  first-time / out-of-band deploys.
 
-  Create it once with:
+## CI/CD: dev / test / production tiers
 
-  ```bash
-  gcloud iam service-accounts create idc-api-deployer --display-name="IDC API deployer"
-  SA="idc-api-deployer@$PROJECT_ID.iam.gserviceaccount.com"
-  for role in roles/run.admin roles/artifactregistry.writer roles/cloudbuild.builds.editor \
-              roles/iam.serviceAccountUser roles/storage.admin \
-              roles/serviceusage.serviceUsageConsumer; do
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$role"
-  done
-  gcloud iam service-accounts keys create sa-key.json --iam-account="$SA"
-  ```
+Three GitHub Actions workflows share one reusable deploy job and use **GitHub Environments**
+(`dev`, `test`, `production`) for per-tier config and governance. Each tier is a **separate GCP
+project** — matching the legacy IDC-API (CircleCI) convention of one project per tier.
 
-  IAM bindings on Cloud Storage can take a minute or two to propagate — if `buckets.get`
-  still fails right after granting the role, wait ~60s and retry before assuming the role is
-  wrong.
+**Build once, promote the same digest.** Because the read-only DuckDB index is baked into the
+image *at build time*, the image is built **once** (on merge to `main`), pushed to a single
+shared Artifact Registry, and the *same immutable `@sha256:` digest* is promoted dev → test →
+production. No tier rebuilds, so test validates the exact bytes production will run. Pinning
+`idc-index` in [pyproject.toml](../pyproject.toml) makes a rebuild *deterministic*; promoting one
+digest makes rebuilds *unnecessary* — a stronger guarantee.
 
-  Paste `sa-key.json`'s contents into the `GCP_SA_KEY` secret, then delete the local file. If
-  you'd rather avoid a long-lived key, swap the workflow's `google-github-actions/auth@v2` step
-  for Workload Identity Federation — the roles above stay the same.
+| Workflow | Trigger | Result |
+|---|---|---|
+| [build-and-deploy-dev.yml](../.github/workflows/build-and-deploy-dev.yml) | push to `main` (image paths) or manual | build + push image, deploy to **dev** |
+| [promote.yml](../.github/workflows/promote.yml) (dispatch) | manual, pick a build SHA | promote that digest to **test** |
+| [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | promote the tagged commit's digest to **production** (behind the required-reviewer gate) |
+| [deploy.yml](../.github/workflows/deploy.yml) | reusable (`workflow_call`) | the shared deploy job the two callers invoke |
+
+The image for a promoted SHA must already exist in the shared registry (i.e. it built on
+`main`). Release commits normally bump the version in `pyproject.toml`, which is in the build
+path filter, so they build; to promote a commit that didn't (e.g. a docs-only tag), run
+`build-and-deploy-dev.yml`'s `workflow_dispatch` on it first.
+
+### One-time setup
+
+**1. Shared Artifact Registry (built once, read by all tiers).** Pick one project to host the
+image repo — reusing the dev project is fine. Under *Settings → Secrets and variables → Actions*
+set repo-level **Variables**:
+
+- `BUILD_PROJECT_ID` — project hosting the shared registry
+- `BUILD_REGION` — its region (default `us-central1`)
+- `AR_REPO` — Artifact Registry repo name (default `idc`, created in step 1)
+
+and a repo-level **Secret** `BUILD_SA_KEY` — a JSON key for a builder SA in `BUILD_PROJECT_ID`
+with `roles/cloudbuild.builds.editor`, `roles/artifactregistry.writer`, `roles/storage.admin`,
+`roles/serviceusage.serviceUsageConsumer`. If `BUILD_PROJECT_ID` is the dev project, this can be
+the dev deployer key from step 2.
+
+**2. One GitHub Environment per tier** (`dev`, `test`, `production`). For each, add:
+
+- Environment **Secrets**: `GCP_PROJECT_ID` and `GCP_SA_KEY` — a deployer SA in *that tier's*
+  project (roles below; create with the snippet, once per project).
+- Environment **Variables** (all optional — the workflow applies the same defaults as the manual
+  deploy above if unset): `REGION`, `CPU`, `MEMORY`, `CONCURRENCY`, `MIN_INSTANCES`,
+  `MAX_INSTANCES`, `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS`. Run prod hotter than dev by setting
+  e.g. `MIN_INSTANCES=1` and a higher `MAX_INSTANCES` on `production` only.
+- On **`production`**: add a *Required reviewers* protection rule (and, optionally, restrict
+  deployments to tags). This is the approval gate — the prod deploy job pauses until a reviewer
+  approves. The reusable job declares `environment: production`, so the gate fires even though
+  the deploy runs inside `deploy.yml`.
+
+Per-tier deployer SA (the same roles as the manual deploy — the tier no longer *builds*, but
+`run.admin` + `iam.serviceAccountUser` deploy, and `artifactregistry.reader` on the shared
+registry lets it resolve the digest; `serviceusage` lets it call APIs):
+
+```bash
+# Run once per tier, against that tier's project.
+gcloud iam service-accounts create idc-api-deployer --display-name="IDC API deployer"
+SA="idc-api-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+for role in roles/run.admin roles/iam.serviceAccountUser \
+            roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$role"
+done
+gcloud iam service-accounts keys create sa-key.json --iam-account="$SA"
+# Paste sa-key.json into the tier's GCP_SA_KEY environment secret, then delete the local file.
+```
+
+The **build** project's SA additionally needs `roles/artifactregistry.writer`,
+`roles/cloudbuild.builds.editor`, and `roles/storage.admin` (the same build/push roles as the
+manual deploy — `storage.admin` because `gcloud builds submit` calls `storage.buckets.get` on the
+auto-created `<PROJECT_ID>_cloudbuild` bucket, which `roles/storage.objectAdmin` does *not*
+cover).
+
+**3. Cross-project registry read.** Each tier deploys the image *from the shared registry*, so on
+`BUILD_PROJECT_ID`'s Artifact Registry grant, for every tier:
+
+- the tier's **deployer SA** `roles/artifactregistry.reader` (to resolve the digest at deploy), and
+- the tier's Cloud Run **service agent**
+  (`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`)
+  `roles/artifactregistry.reader` (to pull the image at deploy / cold start).
+
+```bash
+# From BUILD_PROJECT_ID; repeat --member for each tier's deployer SA and service agent.
+gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" \
+  --project "$BUILD_PROJECT_ID" --location "$BUILD_REGION" \
+  --member="serviceAccount:idc-api-deployer@<TIER_PROJECT_ID>.iam.gserviceaccount.com" \
+  --role=roles/artifactregistry.reader
+gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" \
+  --project "$BUILD_PROJECT_ID" --location "$BUILD_REGION" \
+  --member="serviceAccount:service-<TIER_PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com" \
+  --role=roles/artifactregistry.reader
+```
+
+> **Max-isolation variant.** If org policy forbids cross-project image pulls, drop the grants in
+> step 3 and instead have the promote job copy the digest into each tier's own registry
+> (`gcloud artifacts docker images copy SRC@sha256:… DST@sha256:…` — same bytes) before
+> deploying from there. More IAM and a copy step, but no shared-registry dependency at runtime.
+
+IAM bindings can take a minute or two to propagate — if a read/`buckets.get` fails right after
+granting, wait ~60s and retry before assuming the role is wrong.
+
+> **Long-lived keys vs WIF.** These workflows authenticate with JSON service-account keys
+> (`google-github-actions/auth@v3` + `credentials_json`). To avoid long-lived keys, swap each
+> `auth` step for Workload Identity Federation — the roles above are unchanged; only the `auth`
+> step's inputs differ.

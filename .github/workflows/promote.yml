@@ -1,0 +1,71 @@
+name: Promote (test / production)
+
+# Promote an already-built image (no rebuild) to a higher tier:
+#   - Manual workflow_dispatch  -> test  (pick the short SHA of a green dev build)
+#   - Push a v* tag             -> production (gated by the `production` environment's
+#                                  required-reviewer rule; deploys the tagged commit's build)
+#
+# The image for the chosen SHA must already exist in the shared registry, i.e. it must have gone
+# through build-and-deploy-dev.yml on main. Tag release commits that touched code (a version bump
+# in pyproject.toml counts); to promote a commit that didn't build, run build-and-deploy-dev.yml's
+# workflow_dispatch on it first. See dev/deployment.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target tier"
+        type: choice
+        options: [test, production]
+        default: test
+      build_sha:
+        description: "Short commit SHA of an already-built image to promote"
+        type: string
+        required: true
+      target:
+        description: "Which service(s) to deploy"
+        type: choice
+        options: [rest, mcp, both]
+        default: both
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # Collapse both trigger types into one (environment, build_sha, target) tuple.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.r.outputs.environment }}
+      build_sha: ${{ steps.r.outputs.build_sha }}
+      target: ${{ steps.r.outputs.target }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push: GITHUB_SHA is the tagged commit, whose image was built on main.
+            ENVIRONMENT=production
+            BUILD_SHA=${GITHUB_SHA:0:7}
+            TARGET=both
+          else
+            ENVIRONMENT="${{ inputs.environment }}"
+            BUILD_SHA="${{ inputs.build_sha }}"
+            TARGET="${{ inputs.target }}"
+          fi
+          {
+            echo "environment=$ENVIRONMENT"
+            echo "build_sha=$BUILD_SHA"
+            echo "target=$TARGET"
+          } >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: resolve
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ needs.resolve.outputs.environment }}
+      build_sha: ${{ needs.resolve.outputs.build_sha }}
+      target: ${{ needs.resolve.outputs.target }}
+    secrets: inherit
