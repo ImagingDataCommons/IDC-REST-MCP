@@ -15,11 +15,12 @@ One backend-agnostic **core** library, two thin adapters over it:
 Both surfaces share one core, so a capability is implemented and tested once and exposed in
 both.
 
-> **Status:** Phase 1 (MVP). Discovery, cohort/manifest building, guarded read-only SQL, schema
-> discovery, viewer URLs, citations, and licenses. SQL can query and join the specialized
-> indices (seg/ann/rtstruct, ct/mr/pt, slide microscopy, contrast/geometry, clinical) — fetched
-> at build time. An optional BigQuery backend (for per-segment detail, SR radiomics, and private
-> DICOM elements) is planned for a later phase.
+> **Status:** in active use. Discovery, cohort/manifest building, guarded read-only SQL, schema
+> discovery, viewer URLs, citations, and licenses — over both REST and MCP. SQL can query and
+> join the specialized indices (seg/ann/rtstruct, ct/mr/pt, slide microscopy, contrast/geometry)
+> and the per-collection clinical tables, all fetched at build time; local download runs in stdio
+> MCP mode. Still to come: an optional BigQuery backend (for per-segment detail, SR radiomics, and
+> private DICOM elements) and CDN caching (see [`dev/caching_and_cdn.md`](dev/caching_and_cdn.md)).
 
 ## Documentation
 

@@ -1,5 +1,16 @@
 # IDC API — Design & Implementation Plan
 
+> **Plan of record (historical).** This is the original design plan and rationale, preserved as
+> written. Parts have since been realized and reorganized — for the **current** code shape see
+> [`architecture.md`](architecture.md), and for what's implemented see the [`README.md`](../README.md)
+> status. Known drift from what's below: the specialized indices and per-collection **clinical
+> data are implemented** (the roadmap lists clinical under Phase 3); `models/` and `schema/` are
+> single modules (`models.py` / `schema.py`), not packages; the cohort surface ships
+> `counts` + `build_manifest` (not the `get_patients` / `get_studies` / `get_series` sketched
+> below); and some tool names changed (`sql_query` → `run_sql`, the `build_manifest` /
+> `get_manifest` tools → `build_cohort` / `get_cohort_urls`). The **SQL threat model below is
+> current** and remains the canonical reference for it.
+
 ## Context
 
 IDC previously ran an older REST API: a Flask app that proxied a separate webapp for
