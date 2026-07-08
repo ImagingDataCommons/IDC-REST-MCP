@@ -384,12 +384,15 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
     # --- viewer / citations / licenses ---
     @app.get(f"{API_PREFIX}/viewer-url", response_model=ViewerURL, tags=["tools"])
     def viewer_url(
-        series_instance_uid: str | None = Query(None, examples=[None]),
+        series_instance_uid: str | None = Query(
+            None,
+            examples=["1.3.6.1.4.1.14519.5.2.1.7009.9004.301563950362565728634580697817"],
+        ),
         study_instance_uid: str | None = Query(
             None,
             examples=["1.3.6.1.4.1.14519.5.2.1.7009.9004.983700485806071099502442051273"],
         ),
-        viewer: str | None = Query(None, examples=["ohif"]),
+        viewer: str | None = Query(None, examples=["ohif_v3"]),
     ):
         return C().viewer.get_viewer_url(
             series_instance_uid=series_instance_uid,
