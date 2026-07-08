@@ -12,10 +12,10 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..core.context import AppContext, get_context
 from ..core.errors import IDCAPIError
@@ -60,6 +60,19 @@ def _format_sql(sql: str, settings) -> str:
 
 
 class ManifestRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "filters": {"terms": {"collection_id": ["nlst"], "Modality": ["CT"]}},
+                    "page": 0,
+                    "page_size": 50,
+                    "include_rows": True,
+                }
+            ]
+        }
+    )
+
     filters: CohortFilters = Field(default_factory=CohortFilters)
     page: int = 0
     page_size: int | None = None
@@ -67,22 +80,62 @@ class ManifestRequest(BaseModel):
 
 
 class ManifestTextRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"filters": {"terms": {"collection_id": ["nlst"]}}, "source": "gcs", "limit": 1000}
+            ]
+        }
+    )
+
     filters: CohortFilters = Field(default_factory=CohortFilters)
     source: str = "aws"
     limit: int | None = None
 
 
 class SqlRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "sql": "SELECT Modality, count(*) AS n FROM index GROUP BY 1 ORDER BY n DESC",
+                    "max_rows": 20,
+                }
+            ]
+        }
+    )
+
     sql: str
     max_rows: int | None = None
 
 
 class CitationsRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"filters": {"terms": {"collection_id": ["nlst"]}}, "citation_format": "apa"}
+            ]
+        }
+    )
+
     filters: CohortFilters = Field(default_factory=CohortFilters)
     citation_format: str = "apa"
 
 
 class DownloadRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "download_dir": "/data/idc",
+                    "collection_id": ["nlst"],
+                    "dry_run": True,
+                    "source_bucket_location": "aws",
+                }
+            ]
+        }
+    )
+
     download_dir: str
     collection_id: list[str] | None = None
     patientId: list[str] | None = None
@@ -171,11 +224,61 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         return {"status": "ok"}
 
     # --- discovery ---
-    @app.get(f"{API_PREFIX}/version", response_model=VersionInfo, tags=["discovery"])
+    @app.get(
+        f"{API_PREFIX}/version",
+        response_model=VersionInfo,
+        tags=["discovery"],
+        responses={
+            200: {
+                "content": {
+                    "application/json": {
+                        "examples": {
+                            "illustrative": {
+                                "summary": "Illustrative — not live values",
+                                "value": {
+                                    "idc_version": "v24",
+                                    "idc_index_data_version": "24.0.0",
+                                    "api_version": "3.0.0",
+                                    "build": "a1b2c3d",
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
     def version():
         return C().discovery.version()
 
-    @app.get(f"{API_PREFIX}/stats", response_model=Stats, tags=["discovery"])
+    @app.get(
+        f"{API_PREFIX}/stats",
+        response_model=Stats,
+        tags=["discovery"],
+        responses={
+            200: {
+                "content": {
+                    "application/json": {
+                        "examples": {
+                            "illustrative": {
+                                "summary": "Illustrative — not live values",
+                                "value": {
+                                    "idc_version": "v24",
+                                    "collections": 187,
+                                    "analysis_results": 42,
+                                    "patients": 68000,
+                                    "studies": 130000,
+                                    "series": 1500000,
+                                    "instances": 55000000,
+                                    "size_TB": 112.5,
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
     def stats():
         return C().discovery.stats()
 
@@ -192,7 +295,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=CollectionDetail,
         tags=["discovery"],
     )
-    def collection(collection_id: str):
+    def collection(collection_id: str = Path(..., examples=["nlst"])):
         return C().discovery.get_collection(collection_id)
 
     @app.get(
@@ -214,7 +317,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=AttributeValues,
         tags=["discovery"],
     )
-    def attribute_values(attribute: str, limit: int = Query(100, ge=1, le=10000)):
+    def attribute_values(
+        attribute: str = Path(..., examples=["Modality"]),
+        limit: int = Query(100, ge=1, le=10000, examples=[10]),
+    ):
         return C().discovery.get_attribute_values(attribute, limit=limit)
 
     # --- schema discovery ---
@@ -223,14 +329,14 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         return C().query.list_tables()
 
     @app.get(f"{API_PREFIX}/tables/{{table}}", response_model=TableSchema, tags=["query"])
-    def table_schema(table: str):
+    def table_schema(table: str = Path(..., examples=["index"])):
         return C().query.get_table_schema(table)
 
     # --- clinical data ---
     @app.get(
         f"{API_PREFIX}/clinical/tables", response_model=ClinicalTableList, tags=["clinical"]
     )
-    def clinical_tables(collection_id: str | None = Query(None)):
+    def clinical_tables(collection_id: str | None = Query(None, examples=["nlst"])):
         return C().clinical.list_clinical_tables(collection_id=collection_id)
 
     @app.get(
@@ -238,7 +344,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=TableSchema,
         tags=["clinical"],
     )
-    def clinical_table_schema(table: str):
+    def clinical_table_schema(table: str = Path(..., examples=["nlst_canc"])):
         return C().clinical.get_clinical_table_schema(table)
 
     @app.get(
@@ -246,7 +352,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=SqlResult,
         tags=["clinical"],
     )
-    def clinical_table_rows(table: str, max_rows: int | None = Query(None, ge=1, le=100000)):
+    def clinical_table_rows(
+        table: str = Path(..., examples=["nlst_canc"]),
+        max_rows: int | None = Query(None, ge=1, le=100000, examples=[100]),
+    ):
         return C().clinical.get_clinical_table(table, max_rows=max_rows)
 
     # --- cohort / manifest ---
@@ -275,9 +384,12 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
     # --- viewer / citations / licenses ---
     @app.get(f"{API_PREFIX}/viewer-url", response_model=ViewerURL, tags=["tools"])
     def viewer_url(
-        series_instance_uid: str | None = None,
-        study_instance_uid: str | None = None,
-        viewer: str | None = None,
+        series_instance_uid: str | None = Query(None, examples=[None]),
+        study_instance_uid: str | None = Query(
+            None,
+            examples=["1.3.6.1.4.1.14519.5.2.1.7009.9004.983700485806071099502442051273"],
+        ),
+        viewer: str | None = Query(None, examples=["ohif"]),
     ):
         return C().viewer.get_viewer_url(
             series_instance_uid=series_instance_uid,

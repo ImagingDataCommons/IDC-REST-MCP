@@ -242,10 +242,29 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /docs
 
 ### Worked examples
 
+Every endpoint below is also documented interactively at `/docs` (Swagger UI), with a filled-in
+request/response example for each.
+
 **Discover valid values before filtering:**
 
 ```bash
 curl -s 'localhost:8000/v3/attributes/Modality/values?limit=10'
+```
+
+**Other read-only lookups (GET)** — no body, just the URL:
+
+```bash
+curl -s localhost:8000/v3/version                 # data release + this server's build
+curl -s localhost:8000/v3/stats                   # headline totals
+curl -s localhost:8000/v3/collections             # list datasets
+curl -s localhost:8000/v3/collections/nlst        # one collection's detail
+curl -s localhost:8000/v3/analysis_results        # derived datasets
+curl -s localhost:8000/v3/attributes              # filterable attributes
+curl -s localhost:8000/v3/tables                  # tables available to SQL
+curl -s localhost:8000/v3/tables/index            # one table's column schema
+curl -s 'localhost:8000/v3/clinical/tables?collection_id=nlst'          # clinical tables for a collection
+curl -s localhost:8000/v3/clinical/tables/nlst_canc                     # clinical table columns + labels
+curl -s 'localhost:8000/v3/clinical/tables/nlst_canc/rows?max_rows=100' # clinical rows (capped)
 ```
 
 **Cheap size check** — the `counts` body is the filter object directly:
@@ -290,6 +309,29 @@ curl -s localhost:8000/v3/sql \
 curl -s localhost:8000/v3/licenses \
   -H 'content-type: application/json' \
   -d '{"terms": {"collection_id": ["nlst"]}}'
+```
+
+**Citations for a cohort** — body wraps the filter, like `manifest`:
+
+```bash
+curl -s localhost:8000/v3/citations \
+  -H 'content-type: application/json' \
+  -d '{"filters": {"terms": {"collection_id": ["nlst"]}}, "citation_format": "apa"}'
+```
+
+**Viewer link** for a study (or pass `series_instance_uid=`):
+
+```bash
+curl -s 'localhost:8000/v3/viewer-url?study_instance_uid=1.3.6.1.4.1.14519.5.2.1.7009.9004.983700485806071099502442051273'
+```
+
+**Local download** — only when the server runs in local mode (otherwise returns `501`); use
+`dry_run` to preview the plan without transferring:
+
+```bash
+curl -s localhost:8000/v3/download \
+  -H 'content-type: application/json' \
+  -d '{"download_dir": "/data/idc", "collection_id": ["nlst"], "dry_run": true}'
 ```
 
 ---
