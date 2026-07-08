@@ -480,16 +480,24 @@ curl -sI https://dev-api.canceridc.dev/v3/version | grep -i server   # want: Goo
 > exist" while `/v3/*` worked (the half-fixed state seen 2026-07: `/health` and `/docs` 404'd,
 > `/v3/version` didn't).
 >
-> **Resolved (2026-07): every REST route now lives under `/v3`** — `/v3` (landing), `/v3/health`,
-> `/v3/version`, `/v3/docs`, `/v3/redoc`, `/v3/openapi.json`, and nothing at the bare root
-> (`FastAPI(docs_url=…, redoc_url=…, openapi_url=…)` set to `/v3/…` + landing route at `/v3`; see
-> [rest/app.py](../src/idc_api/rest/app.py)). The previously-broken paths moved *into* the range the
-> `/v3/*` glob already routes, so **redeploying the app is enough — no further URL-map change is
-> needed**; the bare-root paths stay 404, which is now the intended behavior. MCP remains a sibling
-> at `/mcp`. **If you add a REST route, keep it under `/v3`** or this glob will strand it. (No Cloud
-> Run health-check impact: the deploys above set no HTTP probe, so the default TCP startup probe is
-> unaffected. Belt-and-suspenders option: also point the URL map's *default* backend at the
-> `idc-api-v3` NEG, so any stray non-`/v3` path still resolves instead of hitting the ESP.)
+> **Mostly resolved (2026-07): every REST route now lives under `/v3`** — `/v3` (landing),
+> `/v3/health`, `/v3/version`, `/v3/docs`, `/v3/redoc`, `/v3/openapi.json`, and nothing at the bare
+> root (`FastAPI(docs_url=…, redoc_url=…, openapi_url=…)` set to `/v3/…` + landing route at `/v3`;
+> see [rest/app.py](../src/idc_api/rest/app.py)). The previously-broken paths moved *into* the range
+> the `/v3/*` glob already routes, so a **redeploy fixed every functional endpoint under `/v3/…`
+> with no URL-map change**. The bare non-`/v3` paths (`/`, `/health`, …) stay 404 — intended. MCP
+> remains a sibling at `/mcp`. **If you add a REST route, keep it under `/v3/`** or this glob will
+> strand it. (No Cloud Run health-check impact: the deploys above set no HTTP probe, so the default
+> TCP startup probe is unaffected.)
+>
+> **⚠️ Known limitation (deferred) — the bare `/v3` landing is unreachable on the hosted domain.**
+> `/v3/*` matches only paths *under* `/v3/`; the admin confirmed the LB, as configured, **does not
+> count a bare (trailing-slash-less) path in the match**, so `/v3` (no trailing slash) falls through
+> to the legacy-ESP default backend and 404s (`Server: nginx`), and `/v3/` 307-redirects onto it.
+> This affects only the landing page — every real endpoint is under `/v3/…` and works; use
+> `/v3/docs` or `/v3/version` as the entry points. Making bare `/v3` resolve needs an LB-side change
+> (an exact/prefix match on `/v3`, or pointing the URL map's *default* backend at the `idc-api-v3`
+> NEG); **left for later investigation.**
 
 #### Remote MCP over the shared domain — verified behavior
 
