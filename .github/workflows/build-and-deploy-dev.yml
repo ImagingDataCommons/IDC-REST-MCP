@@ -1,0 +1,70 @@
+name: Build & deploy (dev)
+
+# dev is outside the security boundary and fully self-contained: on a push to main that touches
+# the image (or manual dispatch), build+push the image into the DEV project's own Artifact
+# Registry, then deploy it to dev. test and prod do NOT reuse this image — test rebuilds the
+# canonical image and prod runs test's (see promote.yml + dev/deployment.md). All GCP config
+# comes from the `dev` GitHub Environment (GCP_PROJECT_ID, GCP_SA_KEY, RUNTIME_SA, sizing).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/idc_api/**"
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "dev/cloudbuild.yaml"
+      - ".github/workflows/build-and-deploy-dev.yml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-dev
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: dev
+    outputs:
+      build_label: ${{ steps.vars.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve short SHA
+        id: vars
+        run: echo "sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build & push image (Cloud Build)
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          AR_REPO: ${{ vars.AR_REPO || 'idc' }}
+          SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${AR_REPO}/idc-api-v3:${SHA}"
+          gcloud builds submit --config dev/cloudbuild.yaml --substitutions _IMAGE="$IMAGE"
+
+  deploy-dev:
+    needs: build
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      build_label: ${{ needs.build.outputs.build_label }}
+      target: both
+    secrets: inherit

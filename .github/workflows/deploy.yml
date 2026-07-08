@@ -1,58 +1,53 @@
-name: Deploy (Cloud Run)
+name: Deploy to Cloud Run (reusable)
 
-# Manual build+push+deploy of the REST API and/or MCP service to Cloud Run, per
-# dev/deployment.md. Requires two repo secrets:
-#   GCP_SA_KEY      - JSON key for a deploy service account (see dev/deployment.md for
-#                      required roles: roles/run.admin, roles/artifactregistry.writer,
-#                      roles/cloudbuild.builds.editor, roles/iam.serviceAccountUser,
-#                      roles/storage.admin, roles/serviceusage.serviceUsageConsumer)
-#   GCP_PROJECT_ID  - the target GCP project ID
+# Reusable deploy job shared by build-and-deploy-dev.yml (dev) and promote.yml (test / prod).
+# It never builds — it deploys an already-pushed image by its immutable @sha256 digest, so the
+# bytes that ran in test are exactly the bytes that run in prod (the DuckDB index is baked at
+# build time). Per-tier config comes from the GitHub Environment named by `environment`:
+#   Secrets:   GCP_PROJECT_ID, GCP_SA_KEY   (deployer SA for that tier's GCP project)
+#   Variables: RUNTIME_SA (dedicated Cloud Run runtime SA; optional — default compute SA if unset)
+#              REGION, AR_REPO, CPU, MEMORY, CONCURRENCY, MIN_INSTANCES, MAX_INSTANCES,
+#              DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS   (all optional; defaults below)
 #
-# Assumes the one-time project setup (API enablement, Artifact Registry repo creation) in
-# dev/deployment.md step 1 has already been done.
+# Image source: by default the image is resolved from THIS tier's own registry
+#   <REGION>-docker.pkg.dev/<GCP_PROJECT_ID>/<AR_REPO>/idc-api-v3:<build_label>
+# (dev and test build into their own registry). For prod, pass `source_image` = the full test
+# registry reference, since prod deploys test's image directly (prod's deployer + Cloud Run
+# service agent are granted read on test's Artifact Registry). See dev/deployment.md.
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
+      environment:
+        description: "Target GitHub Environment / tier (dev | test | prod)"
+        required: true
+        type: string
+      build_label:
+        description: "Short commit SHA — the image tag to deploy and the IDC_API_BUILD stamp"
+        required: true
+        type: string
       target:
-        description: "Which service(s) to deploy"
-        type: choice
-        options: [rest, mcp, both]
-        default: rest
-      region:
-        description: "Cloud Run region"
+        description: "Which service(s) to deploy (rest | mcp | both)"
+        required: false
         type: string
-        default: us-central1
-      repo:
-        description: "Artifact Registry repo name"
-        type: string
-        default: idc
-      image_tag:
-        description: "Image tag (defaults to the short commit SHA)"
+        default: both
+      source_image:
+        description: "Full image ref (with tag) to deploy; empty = build it from this tier's own registry"
+        required: false
         type: string
         default: ""
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy
-  cancel-in-progress: false
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Resolve image tag
-        id: vars
-        run: |
-          TAG="${{ inputs.image_tag }}"
-          if [ -z "$TAG" ]; then TAG="${GITHUB_SHA:0:7}"; fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "image=${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ inputs.repo }}/idc-api-v3:$TAG" >> "$GITHUB_OUTPUT"
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -63,52 +58,120 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Build & push image (Cloud Build)
+      - name: Resolve image digest
+        id: img
+        env:
+          SOURCE_IMAGE: ${{ inputs.source_image }}
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          AR_REPO: ${{ vars.AR_REPO || 'idc' }}
+          BUILD_LABEL: ${{ inputs.build_label }}
         run: |
-          gcloud builds submit --config dev/cloudbuild.yaml \
-            --substitutions _IMAGE="${{ steps.vars.outputs.image }}"
+          set -euo pipefail
+          REF="${SOURCE_IMAGE:-${REGION}-docker.pkg.dev/${PROJECT}/${AR_REPO}/idc-api-v3:${BUILD_LABEL}}"
+          # Pin to the immutable digest so the deploy can't drift off a moving tag. Capture the
+          # exit code explicitly — under `set -e` a failed describe inside $(...) would otherwise
+          # abort before the friendly message below.
+          if ! DIGEST=$(gcloud artifacts docker images describe "$REF" \
+                --format='value(image_summary.fully_qualified_digest)' 2> resolve_err.log); then
+            echo "::error::Could not resolve '$REF'. Is it built and pushed, and readable by this tier's deployer SA?"
+            cat resolve_err.log >&2 || true
+            exit 1
+          fi
+          if [ -z "$DIGEST" ]; then
+            echo "::error::No digest returned for '$REF'."
+            exit 1
+          fi
+          echo "image=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Deploying digest: $DIGEST"
 
       - name: Deploy REST API
         if: ${{ inputs.target == 'rest' || inputs.target == 'both' }}
+        env:
+          IMAGE: ${{ steps.img.outputs.image }}
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+          BUILD_LABEL: ${{ inputs.build_label }}
+          CPU: ${{ vars.CPU }}
+          MEMORY: ${{ vars.MEMORY }}
+          CONCURRENCY: ${{ vars.CONCURRENCY }}
+          MIN_INSTANCES: ${{ vars.MIN_INSTANCES }}
+          MAX_INSTANCES: ${{ vars.MAX_INSTANCES }}
+          DUCKDB_MEMORY_LIMIT: ${{ vars.DUCKDB_MEMORY_LIMIT }}
+          DUCKDB_THREADS: ${{ vars.DUCKDB_THREADS }}
         run: |
-          gcloud run deploy idc-api-v3 \
-            --image "${{ steps.vars.outputs.image }}" \
-            --region "${{ inputs.region }}" \
-            --allow-unauthenticated \
-            --cpu 2 --memory 4Gi \
-            --concurrency 40 \
-            --min-instances 0 --max-instances 5 \
-            --cpu-boost \
-            --set-env-vars IDC_API_DUCKDB_MEMORY_LIMIT=3GB,IDC_API_DUCKDB_THREADS=2,IDC_API_BUILD=${{ steps.vars.outputs.tag }}
+          set -euo pipefail
+          args=(
+            --image "$IMAGE"
+            --project "$PROJECT"
+            --region "$REGION"
+            --allow-unauthenticated
+            --cpu "${CPU:-2}" --memory "${MEMORY:-4Gi}"
+            --concurrency "${CONCURRENCY:-40}"
+            --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-5}"
+            --cpu-boost
+            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL}"
+          )
+          [ -n "${RUNTIME_SA:-}" ] && args+=( --service-account "$RUNTIME_SA" )
+          gcloud run deploy idc-api-v3 "${args[@]}"
 
       - name: Deploy MCP service
         if: ${{ inputs.target == 'mcp' || inputs.target == 'both' }}
+        env:
+          IMAGE: ${{ steps.img.outputs.image }}
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+          BUILD_LABEL: ${{ inputs.build_label }}
+          CPU: ${{ vars.CPU }}
+          MEMORY: ${{ vars.MEMORY }}
+          MIN_INSTANCES: ${{ vars.MIN_INSTANCES }}
+          MAX_INSTANCES: ${{ vars.MAX_INSTANCES }}
+          DUCKDB_MEMORY_LIMIT: ${{ vars.DUCKDB_MEMORY_LIMIT }}
+          DUCKDB_THREADS: ${{ vars.DUCKDB_THREADS }}
         run: |
-          gcloud run deploy idc-mcp-v3 \
-            --image "${{ steps.vars.outputs.image }}" \
-            --region "${{ inputs.region }}" \
-            --allow-unauthenticated \
-            --cpu 2 --memory 4Gi \
-            --min-instances 0 --max-instances 5 \
-            --command idc-mcp \
-            --args=--http,--host,0.0.0.0,--port,8080 \
-            --set-env-vars IDC_API_DUCKDB_MEMORY_LIMIT=3GB,IDC_API_DUCKDB_THREADS=2,IDC_API_BUILD=${{ steps.vars.outputs.tag }}
+          set -euo pipefail
+          args=(
+            --image "$IMAGE"
+            --project "$PROJECT"
+            --region "$REGION"
+            --allow-unauthenticated
+            --cpu "${CPU:-2}" --memory "${MEMORY:-4Gi}"
+            --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-5}"
+            --command idc-mcp
+            "--args=--http,--host,0.0.0.0,--port,8080"
+            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL}"
+          )
+          [ -n "${RUNTIME_SA:-}" ] && args+=( --service-account "$RUNTIME_SA" )
+          gcloud run deploy idc-mcp-v3 "${args[@]}"
 
       - name: Verify REST API
         if: ${{ inputs.target == 'rest' || inputs.target == 'both' }}
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
         run: |
-          URL=$(gcloud run services describe idc-api-v3 --region "${{ inputs.region }}" --format='value(status.url)')
+          set -euo pipefail
+          URL=$(gcloud run services describe idc-api-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
           curl -sf "$URL/health"; echo
           {
-            echo "### REST API deployed"
-            echo "$URL"
+            echo "### REST API deployed to ${{ inputs.environment }}"
+            echo "- URL: $URL"
+            echo "- Build: \`${{ inputs.build_label }}\`"
+            echo "- Image: \`${{ steps.img.outputs.image }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify MCP service
         if: ${{ inputs.target == 'mcp' || inputs.target == 'both' }}
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
         run: |
-          URL=$(gcloud run services describe idc-mcp-v3 --region "${{ inputs.region }}" --format='value(status.url)')
+          set -euo pipefail
+          URL=$(gcloud run services describe idc-mcp-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
           {
-            echo "### MCP service deployed"
-            echo "$URL/mcp"
+            echo "### MCP service deployed to ${{ inputs.environment }}"
+            echo "- URL: $URL/mcp"
+            echo "- Build: \`${{ inputs.build_label }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
