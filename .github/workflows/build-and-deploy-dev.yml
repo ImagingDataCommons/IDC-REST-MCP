@@ -8,7 +8,8 @@ name: Build & deploy (dev)
 
 on:
   push:
-    branches: [main]
+    # TEMP(ci/multi-tier-deploy): branch added to validate the dev deploy before merge. REMOVE before merging.
+    branches: [main, ci/multi-tier-deploy]
     paths:
       - "src/idc_api/**"
       - "Dockerfile"
