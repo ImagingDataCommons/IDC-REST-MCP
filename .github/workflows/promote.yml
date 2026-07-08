@@ -1,27 +1,27 @@
 name: Promote (test / prod)
 
-# Promote an already-built image (no rebuild) to a higher tier:
-#   - Manual workflow_dispatch  -> test  (pick the short SHA of a green dev build)
-#   - Push a v* tag             -> prod (gated by the `prod` environment's
-#                                  required-reviewer rule; deploys the tagged commit's build)
+# Promotion across the security boundary:
+#   - Manual workflow_dispatch  -> TEST: build the canonical image from the chosen ref into TEST's
+#       own Artifact Registry and deploy it to test. (test doubles as UAT.) This is the "one
+#       rebuild into test" — dev's image is never promoted, since dev is outside the boundary.
+#   - Push a v* tag             -> PROD: deploy the exact image TEST already validated, by digest,
+#       referencing TEST's registry directly (no rebuild, no copy). Gated by the `prod`
+#       Environment's required-reviewer rule. prod's deployer SA + Cloud Run service agent must
+#       have read on TEST's Artifact Registry.
 #
-# The image for the chosen SHA must already exist in the shared registry, i.e. it must have gone
-# through build-and-deploy-dev.yml on main. Tag release commits that touched code (a version bump
-# in pyproject.toml counts); to promote a commit that didn't build, run build-and-deploy-dev.yml's
-# workflow_dispatch on it first. See dev/deployment.md.
+# For the prod path, test's registry coordinates come from repo-level Variables (test's project
+# isn't in prod's Environment): TEST_PROJECT_ID (required), TEST_REGION / TEST_AR_REPO (optional).
+# The image for the tagged commit must already exist in test (i.e. it was promoted to test first).
+# See dev/deployment.md.
 
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Target tier"
-        type: choice
-        options: [test, prod]
-        default: test
-      build_sha:
-        description: "Short commit SHA of an already-built image to promote"
+      ref:
+        description: "Git ref (branch / tag / SHA) to build into test"
         type: string
         required: true
+        default: main
       target:
         description: "Which service(s) to deploy"
         type: choice
@@ -34,38 +34,85 @@ permissions:
   contents: read
 
 jobs:
-  # Collapse both trigger types into one (environment, build_sha, target) tuple.
-  resolve:
+  # ---------- TEST path (manual dispatch): build canonical image into test, then deploy ----------
+  build-test:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    environment: test
     outputs:
-      environment: ${{ steps.r.outputs.environment }}
-      build_sha: ${{ steps.r.outputs.build_sha }}
-      target: ${{ steps.r.outputs.target }}
+      build_label: ${{ steps.vars.outputs.sha }}
     steps:
-      - id: r
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve short SHA
+        id: vars
+        run: echo "sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build & push canonical image (Cloud Build)
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          AR_REPO: ${{ vars.AR_REPO || 'idc' }}
+          SHA: ${{ steps.vars.outputs.sha }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Tag push: GITHUB_SHA is the tagged commit, whose image was built on main.
-            ENVIRONMENT=prod
-            BUILD_SHA=${GITHUB_SHA:0:7}
-            TARGET=both
-          else
-            ENVIRONMENT="${{ inputs.environment }}"
-            BUILD_SHA="${{ inputs.build_sha }}"
-            TARGET="${{ inputs.target }}"
-          fi
-          {
-            echo "environment=$ENVIRONMENT"
-            echo "build_sha=$BUILD_SHA"
-            echo "target=$TARGET"
-          } >> "$GITHUB_OUTPUT"
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${AR_REPO}/idc-api-v3:${SHA}"
+          gcloud builds submit --config dev/cloudbuild.yaml --substitutions _IMAGE="$IMAGE"
 
-  promote:
-    needs: resolve
+  deploy-test:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: build-test
     uses: ./.github/workflows/deploy.yml
     with:
-      environment: ${{ needs.resolve.outputs.environment }}
-      build_sha: ${{ needs.resolve.outputs.build_sha }}
-      target: ${{ needs.resolve.outputs.target }}
+      environment: test
+      build_label: ${{ needs.build-test.outputs.build_label }}
+      target: ${{ inputs.target }}
+    secrets: inherit
+
+  # ---------- PROD path (v* tag): deploy test's digest to prod, no rebuild ----------
+  resolve-prod:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    outputs:
+      build_label: ${{ steps.r.outputs.sha }}
+      source_image: ${{ steps.r.outputs.image }}
+    steps:
+      - id: r
+        env:
+          TEST_PROJECT: ${{ vars.TEST_PROJECT_ID }}
+          TEST_REGION: ${{ vars.TEST_REGION || vars.REGION || 'us-central1' }}
+          TEST_AR_REPO: ${{ vars.TEST_AR_REPO || vars.AR_REPO || 'idc' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TEST_PROJECT:-}" ]; then
+            echo "::error::Repo variable TEST_PROJECT_ID is not set — prod deploys test's image and needs to know test's project."
+            exit 1
+          fi
+          SHA=${GITHUB_SHA:0:7}
+          {
+            echo "sha=$SHA"
+            echo "image=${TEST_REGION}-docker.pkg.dev/${TEST_PROJECT}/${TEST_AR_REPO}/idc-api-v3:${SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy-prod:
+    if: ${{ github.event_name == 'push' }}
+    needs: resolve-prod
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+      build_label: ${{ needs.resolve-prod.outputs.build_label }}
+      source_image: ${{ needs.resolve-prod.outputs.source_image }}
+      target: both
     secrets: inherit

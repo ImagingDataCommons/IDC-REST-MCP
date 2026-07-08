@@ -196,7 +196,10 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
 - **Custom domain / CDN:** map a domain via Cloud Run domain mappings, or front it with a load
   balancer + Cloud CDN. Discovery responses change only per IDC release, so they cache well —
   add `Cache-Control` if you put a CDN in front. See [caching_and_cdn.md](caching_and_cdn.md)
-  for a primer and the proposed (not-yet-implemented) cache-header enhancement.
+  for a primer and the proposed (not-yet-implemented) cache-header enhancement. For the specific
+  per-tier public URLs (the `*.canceridc.dev` / `api.imaging.datacommons.cancer.gov` domains
+  carried over from the legacy API) and how to attach them, see
+  [Tier URLs — custom domains](#tier-urls--custom-domains) below.
 - **CI/CD:** deployment is automated across dev / test / prod tiers with GitHub
   Actions — see [CI/CD: dev / test / prod tiers](#cicd-dev--test--prod-tiers) below.
   The manual steps 2–3 above remain the ground truth for what those workflows run and for
@@ -208,12 +211,19 @@ Three GitHub Actions workflows share one reusable deploy job and use **GitHub En
 (`dev`, `test`, `prod`) for per-tier config and governance. Each tier is a **separate GCP
 project** — matching the legacy IDC-API (CircleCI) convention of one project per tier.
 
-**Build once, promote the same digest.** Because the read-only DuckDB index is baked into the
-image *at build time*, the image is built **once** (on merge to `main`), pushed to a single
-shared Artifact Registry, and the *same immutable `@sha256:` digest* is promoted dev → test →
-prod. No tier rebuilds, so test validates the exact bytes prod will run. Pinning
-`idc-index` in [pyproject.toml](../pyproject.toml) makes a rebuild *deterministic*; promoting one
-digest makes rebuilds *unnecessary* — a stronger guarantee.
+**Image flow — each tier in its own project; prod runs exactly what test validated.** Because the
+read-only DuckDB index is baked into the image *at build time*, images stay inside the security
+boundary and never cross it the wrong way:
+
+- **dev** is *outside* the boundary and self-contained: it builds its own image into the **dev**
+  project's registry and deploys it. Nothing dev produces is ever promoted onward.
+- **test** builds the **canonical** image into the **test** project's registry and deploys it
+  (test doubles as UAT). Pinning `idc-index` in [pyproject.toml](../pyproject.toml) keeps that
+  build deterministic.
+- **prod** deploys **test's exact image by immutable `@sha256:` digest**, referencing test's
+  registry directly — no rebuild, no copy — so prod runs the bytes test validated. prod's deployer
+  SA and Cloud Run service agent are granted read on test's Artifact Registry (the only
+  cross-project access in the design).
 
 ### Coming from the CircleCI pipeline?
 
@@ -227,96 +237,76 @@ file — the first becomes the *trigger*, the second becomes an *Environment set
 | Per-tier secrets as context env vars (`DEPLOYMENT_*_IDC_<TIER>`) | Per-tier **Environment** Secrets/Variables (`GCP_PROJECT_ID`, `GCP_SA_KEY`, sizing) |
 | A `type: approval` hold **job in `config.yml`** gates the deploy | A **Required reviewers** rule on the `prod` **Environment**, set in repo *Settings* — **not** in any YAML (see [Configuring the prod approval gate](#configuring-the-prod-approval-gate)) |
 | Deploy auto-runs on every matching branch | dev auto-runs; test is manual; prod waits for reviewer approval |
-| Rebuild per branch | Build once on `main`, promote the same digest |
+| Rebuild per branch | dev and test each build in their own project; prod runs test's exact image by digest |
 
 | Workflow | Trigger | Result |
 |---|---|---|
-| [build-and-deploy-dev.yml](../.github/workflows/build-and-deploy-dev.yml) | push to `main` (image paths) or manual | build + push image, deploy to **dev** |
-| [promote.yml](../.github/workflows/promote.yml) (dispatch) | manual, pick a build SHA | promote that digest to **test** |
-| [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | promote the tagged commit's digest to **prod** (behind the required-reviewer gate) |
-| [deploy.yml](../.github/workflows/deploy.yml) | reusable (`workflow_call`) | the shared deploy job the two callers invoke |
+| [build-and-deploy-dev.yml](../.github/workflows/build-and-deploy-dev.yml) | push to `main` (image paths) or manual | build in the dev project + deploy **dev** |
+| [promote.yml](../.github/workflows/promote.yml) (dispatch) | manual, pick a git ref | build the canonical image in test + deploy **test** |
+| [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | deploy test's digest to **prod** (behind the required-reviewer gate) |
+| [deploy.yml](../.github/workflows/deploy.yml) | reusable (`workflow_call`) | the shared deploy job the callers invoke |
 
-The image for a promoted SHA must already exist in the shared registry (i.e. it built on
-`main`). Release commits normally bump the version in `pyproject.toml`, which is in the build
-path filter, so they build; to promote a commit that didn't (e.g. a docs-only tag), run
-`build-and-deploy-dev.yml`'s `workflow_dispatch` on it first.
+Prod deploys **test's** image, so a `v*` tag must point at a commit that was **already promoted to
+test** (its image exists in test's registry). Cut releases from a ref you've dispatched to test;
+tag a commit that never went through test and the prod deploy fails fast at the digest-resolve
+step.
 
 ### One-time setup
 
-**1. Shared Artifact Registry (built once, read by all tiers).** Pick one project to host the
-image repo — reusing the dev project is fine. Under *Settings → Secrets and variables → Actions*
-set repo-level **Variables**:
+Each tier is its own GCP project with its own **GitHub Environment** (`dev`, `test`, `prod`). The
+per-tier **deployer** service accounts already exist — their JSON keys live in each tier's
+deployment bucket, so reuse them rather than creating new ones. The specific service accounts are
+tracked in project-management issue 2068.
 
-- `BUILD_PROJECT_ID` — project hosting the shared registry
-- `BUILD_REGION` — its region (default `us-central1`)
-- `AR_REPO` — Artifact Registry repo name (default `idc`, created in step 1)
+**1. Per-tier GitHub Environment.** Create `dev`, `test`, and `prod`; for each add:
 
-and a repo-level **Secret** `BUILD_SA_KEY` — a JSON key for a builder SA in `BUILD_PROJECT_ID`
-with `roles/cloudbuild.builds.editor`, `roles/artifactregistry.writer`, `roles/storage.admin`,
-`roles/serviceusage.serviceUsageConsumer`. If `BUILD_PROJECT_ID` is the dev project, this can be
-the dev deployer key from step 2.
+- **Secrets**
+  - `GCP_PROJECT_ID` — that tier's project ID.
+  - `GCP_SA_KEY` — the tier's existing **deployer** SA key (from the tier's deployment bucket).
+- **Variables** (all optional; defaults in parentheses)
+  - `RUNTIME_SA` — the tier's dedicated Cloud Run **runtime** SA (e.g.
+    `cloud-run-sa@<project>.iam.gserviceaccount.com`), passed via `--service-account`. Omit and the
+    service runs as the default compute SA (acceptable for dev, not recommended for prod).
+  - `REGION` (`us-central1`), `AR_REPO` (`idc`), `CPU` (`2`), `MEMORY` (`4Gi`), `CONCURRENCY`
+    (`40`), `MIN_INSTANCES` (`0`), `MAX_INSTANCES` (`5`), `DUCKDB_MEMORY_LIMIT` (`3GB`),
+    `DUCKDB_THREADS` (`2`). Run prod hotter (e.g. `MIN_INSTANCES=1`).
+- On **`prod`** only: add the **Required reviewers** approval gate — see
+  [Configuring the prod approval gate](#configuring-the-prod-approval-gate).
 
-**2. One GitHub Environment per tier** (`dev`, `test`, `prod`). For each, add:
+**Deployer vs runtime SA.** `GCP_SA_KEY` is the **deployer** and must be able to run
+`gcloud run deploy` (`roles/run.admin`, `roles/iam.serviceAccountUser` to act as the runtime SA);
+tiers that build (dev, test) additionally need `roles/artifactregistry.writer`,
+`roles/cloudbuild.builds.editor`, and `roles/storage.admin` (the last because `gcloud builds
+submit` calls `storage.buckets.get` on the auto-created `<PROJECT_ID>_cloudbuild` bucket, which
+`roles/storage.objectAdmin` does *not* cover), plus `roles/serviceusage.serviceUsageConsumer`. The
+**runtime** SA (`RUNTIME_SA`) is what the container runs as and needs **no roles** — the app makes
+no GCP calls.
 
-- Environment **Secrets**: `GCP_PROJECT_ID` and `GCP_SA_KEY` — a deployer SA in *that tier's*
-  project (roles below; create with the snippet, once per project).
-- Environment **Variables** (all optional — the workflow applies the same defaults as the manual
-  deploy above if unset): `REGION`, `CPU`, `MEMORY`, `CONCURRENCY`, `MIN_INSTANCES`,
-  `MAX_INSTANCES`, `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS`. Run prod hotter than dev by setting
-  e.g. `MIN_INSTANCES=1` and a higher `MAX_INSTANCES` on `prod` only.
-- On **`prod`**: add the **Required reviewers** approval gate — the step-by-step is in
-  [Configuring the prod approval gate](#configuring-the-prod-approval-gate) below. (Optionally
-  also restrict its deployment branches/tags to `v*`.)
+**2. Registry access for prod — the only cross-project grant.** dev and test build into and deploy
+from their **own** project's registry, so they need no cross-project access. prod runs **test's**
+image, so on **test's** Artifact Registry grant:
 
-Per-tier deployer SA (the same roles as the manual deploy — the tier no longer *builds*, but
-`run.admin` + `iam.serviceAccountUser` deploy, and `artifactregistry.reader` on the shared
-registry lets it resolve the digest; `serviceusage` lets it call APIs):
-
-```bash
-# Run once per tier, against that tier's project.
-gcloud iam service-accounts create idc-api-deployer --display-name="IDC API deployer"
-SA="idc-api-deployer@$PROJECT_ID.iam.gserviceaccount.com"
-for role in roles/run.admin roles/iam.serviceAccountUser \
-            roles/serviceusage.serviceUsageConsumer; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$role"
-done
-gcloud iam service-accounts keys create sa-key.json --iam-account="$SA"
-# Paste sa-key.json into the tier's GCP_SA_KEY environment secret, then delete the local file.
-```
-
-The **build** project's SA additionally needs `roles/artifactregistry.writer`,
-`roles/cloudbuild.builds.editor`, and `roles/storage.admin` (the same build/push roles as the
-manual deploy — `storage.admin` because `gcloud builds submit` calls `storage.buckets.get` on the
-auto-created `<PROJECT_ID>_cloudbuild` bucket, which `roles/storage.objectAdmin` does *not*
-cover).
-
-**3. Cross-project registry read.** Each tier deploys the image *from the shared registry*, so on
-`BUILD_PROJECT_ID`'s Artifact Registry grant, for every tier:
-
-- the tier's **deployer SA** `roles/artifactregistry.reader` (to resolve the digest at deploy), and
-- the tier's Cloud Run **service agent**
-  (`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`)
+- prod's **deployer SA** `roles/artifactregistry.reader` (to resolve the digest at deploy), and
+- prod's Cloud Run **service agent**
+  (`service-<PROD_PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`)
   `roles/artifactregistry.reader` (to pull the image at deploy / cold start).
 
 ```bash
-# From BUILD_PROJECT_ID; repeat --member for each tier's deployer SA and service agent.
-gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" \
-  --project "$BUILD_PROJECT_ID" --location "$BUILD_REGION" \
-  --member="serviceAccount:idc-api-deployer@<TIER_PROJECT_ID>.iam.gserviceaccount.com" \
-  --role=roles/artifactregistry.reader
-gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" \
-  --project "$BUILD_PROJECT_ID" --location "$BUILD_REGION" \
-  --member="serviceAccount:service-<TIER_PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com" \
+# Run against the TEST project. TEST_AR_REPO defaults to "idc", TEST_REGION to "us-central1".
+gcloud artifacts repositories add-iam-policy-binding "$TEST_AR_REPO" \
+  --project "$TEST_PROJECT_ID" --location "$TEST_REGION" \
+  --member="serviceAccount:<prod-deployer-sa>" --role=roles/artifactregistry.reader
+gcloud artifacts repositories add-iam-policy-binding "$TEST_AR_REPO" \
+  --project "$TEST_PROJECT_ID" --location "$TEST_REGION" \
+  --member="serviceAccount:service-<PROD_PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com" \
   --role=roles/artifactregistry.reader
 ```
 
-> **Max-isolation variant.** If org policy forbids cross-project image pulls, drop the grants in
-> step 3 and instead have the promote job copy the digest into each tier's own registry
-> (`gcloud artifacts docker images copy SRC@sha256:… DST@sha256:…` — same bytes) before
-> deploying from there. More IAM and a copy step, but no shared-registry dependency at runtime.
+The prod path also needs repo-level **Variables** locating test's registry: `TEST_PROJECT_ID`
+(required), plus `TEST_REGION` / `TEST_AR_REPO` if they differ from the defaults.
 
-IAM bindings can take a minute or two to propagate — if a read/`buckets.get` fails right after
-granting, wait ~60s and retry before assuming the role is wrong.
+IAM bindings can take a minute or two to propagate — if a read fails right after granting, wait
+~60s and retry before assuming the role is wrong.
 
 ### Configuring the prod approval gate
 
@@ -355,3 +345,105 @@ records who approved each prod deployment under the repo's **Deployments** view.
 > (`google-github-actions/auth@v3` + `credentials_json`). To avoid long-lived keys, swap each
 > `auth` step for Workload Identity Federation — the roles above are unchanged; only the `auth`
 > step's inputs differ.
+
+### Tier URLs — custom domains
+
+The legacy pipeline set each tier's URL through **Cloud Endpoints**: the `host:` field in the
+staged OpenAPI spec *was* the API's public domain (`gcloud endpoints services deploy`). Cloud Run
+has **no Endpoints layer** — a freshly deployed service answers only on a Google-assigned
+`https://idc-api-v3-<project-number>.<region>.run.app`. To keep serving on the same public domains,
+attach a **custom domain** to each tier's Cloud Run service. The domains carry over one-to-one; the
+legacy `uat` tier has no successor (the 4-tier CircleCI setup became 3 tiers here):
+
+| New tier | Public URL (custom domain) | Legacy Cloud Endpoints `host:` |
+|---|---|---|
+| dev  | `https://dev-api.canceridc.dev`              | `dev-api.canceridc.dev` |
+| test | `https://testing-api.canceridc.dev`          | `testing-api.canceridc.dev` |
+| prod | `https://api.imaging.datacommons.cancer.gov` | `api.imaging.datacommons.cancer.gov` |
+| ~~uat~~ | — retired (merged into the tiers above) | a `*.canceridc.dev` host |
+
+There are two ways to attach a domain; choose per tier:
+
+- **(A) Cloud Run domain mapping** — one `gcloud` command + DNS records, Google-managed TLS. The
+  simplest path, documented step-by-step below.
+- **(B) External Application Load Balancer + serverless NEG** — more setup, but the only option
+  that also enables **Cloud Armor** per-IP rate limiting and **Cloud CDN** (see *Rate limiting /
+  abuse protection* and the *Custom domain / CDN* note). **Recommended for `prod`**, the tier most
+  exposed to abuse; outlined at the end.
+
+Attaching a domain is **one-time infrastructure setup**, run out-of-band by an operator with access
+to that tier's project — it is **not** part of the CI deploy. The mapping points at the *service
+name*, not at any revision, so every subsequent CI promotion/rollback keeps the same domain and
+nothing in the workflows changes.
+
+#### (A) Domain mapping — step by step (one-time per tier)
+
+**Before you start, per tier:**
+
+- The tier's service must already be deployed (CI has run at least once) so it exists in that
+  project + region.
+- You must be able to **(1) verify domain ownership** to Google *and* **(2) edit the domain's DNS**:
+  - `canceridc.dev` (dev, test) — owned by IDC/ISB, so both are self-service.
+  - `datacommons.cancer.gov` (prod) — a **NCI-controlled** DNS zone. The ownership-verification
+    record **and** the final DNS record for `api.imaging.datacommons.cancer.gov` must be filed with
+    **NCI**; this is not self-service and has lead time, so plan the prod cutover around it.
+- Domain mappings aren't offered in every Cloud Run region; `us-central1` (this repo's default
+  `REGION`) is supported. If a tier runs in a region without mapping support, use **(B)**.
+
+**Steps** (shown for `dev`; repeat with each tier's domain, project, and region — the `$GCP_PROJECT_ID`
+and `$REGION` for a tier are the same values its GitHub Environment uses):
+
+1. **Verify the registrable domain once** (per Google account/project) to prove you own
+   `canceridc.dev` / `cancer.gov`:
+   ```bash
+   gcloud domains verify canceridc.dev     # opens Search Console; add the TXT record it prints
+   ```
+   For `cancer.gov`, **NCI** must add the verification record (or grant the deploying account
+   ownership in Search Console) — request it from them.
+
+2. **Create the mapping** in that tier's project + region:
+   ```bash
+   gcloud run domain-mappings create \
+     --service idc-api-v3 \
+     --domain  dev-api.canceridc.dev \
+     --region  "$REGION" \
+     --project "$GCP_PROJECT_ID"
+   ```
+
+3. **Read back the DNS records** Google wants published, then add them at the domain's DNS provider:
+   ```bash
+   gcloud run domain-mappings describe \
+     --domain dev-api.canceridc.dev --region "$REGION" --project "$GCP_PROJECT_ID" \
+     --format='value(status.resourceRecords[].name, status.resourceRecords[].type, status.resourceRecords[].rrdata)'
+   ```
+   A subdomain (all three of ours are subdomains) gets a **CNAME → `ghs.googlehosted.com.`**. Add it
+   in the `canceridc.dev` zone yourself; for `api.imaging.datacommons.cancer.gov`, file the CNAME
+   with **NCI**.
+
+4. **Wait for the managed TLS cert.** Provisioning starts once the DNS record resolves and takes
+   minutes to ~24h. Watch it:
+   ```bash
+   gcloud run domain-mappings describe \
+     --domain dev-api.canceridc.dev --region "$REGION" --project "$GCP_PROJECT_ID" \
+     --format='value(status.conditions[].type, status.conditions[].status)'
+   ```
+
+5. **Verify** — the same checks as the `*.run.app` URL, now on the real domain:
+   ```bash
+   curl -s https://dev-api.canceridc.dev/health;    echo
+   curl -s https://dev-api.canceridc.dev/v3/version; echo
+   ```
+   For the MCP service, map a domain to `idc-mcp-v3` the same way and test the `…/mcp` path.
+
+#### (B) Load balancer — outline (recommended for `prod`)
+
+Use this when you also want Cloud Armor rate limiting or Cloud CDN. The domain's DNS points at the
+load balancer's IP (not at Cloud Run directly):
+
+1. Reserve a **global static IP**.
+2. Create a **serverless NEG** for the tier's Cloud Run service and add it to a **backend service**.
+3. *(Optional)* attach a **Cloud Armor** rate-limit policy to that backend service.
+4. Create a **Google-managed cert** for the domain, a **URL map**, an **HTTPS target proxy**, and a
+   **global forwarding rule**.
+5. Point the domain's **A/AAAA** records at the reserved IP (for `cancer.gov`, file with **NCI**).
+   The cert provisions once DNS resolves; then verify as in (A) step 5.

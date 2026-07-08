@@ -21,15 +21,28 @@ concurrency:
   group: actionlint-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ACTIONLINT_VERSION: "1.7.12"
+  # sha256 of actionlint_<version>_linux_amd64.tar.gz from the release's checksums.txt
+  ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+
 jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          TARBALL="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${TARBALL}"
+          echo "${ACTIONLINT_SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" actionlint
+          ./actionlint -version
+
       - name: Run actionlint
         run: |
-          # Official pinned installer (script ref + binary version both v1.7.12). ubuntu-latest
-          # ships shellcheck, so actionlint's `run:` script checks apply too, matching local runs.
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          # ubuntu-latest ships shellcheck, so actionlint's `run:` script checks apply too,
+          # matching local runs.
           ./actionlint -color
