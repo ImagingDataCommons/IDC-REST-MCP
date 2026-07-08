@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- discovery ----------------------------------------------------------------------------
 
@@ -154,6 +154,17 @@ class CohortFilters(BaseModel):
     """Structured filters over the main `index` table. ``terms`` does equality/IN (OR within
     an attribute, AND across attributes); ``ranges`` does gte/lte. Discover valid attribute
     names with ``list_attributes`` and valid values with ``get_attribute_values``."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "terms": {"collection_id": ["nlst"], "Modality": ["CT"]},
+                    "ranges": {},
+                }
+            ]
+        }
+    )
 
     terms: dict[str, list[str]] = Field(
         default_factory=dict,
