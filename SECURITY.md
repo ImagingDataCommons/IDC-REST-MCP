@@ -40,8 +40,9 @@ exhaustion) rather than data disclosure. Full rationale and the guarded-SQL thre
   PR — deliberately not path-filtered, since a credential can be committed in any file.
   [ci.yml](.github/workflows/ci.yml) runs `ruff` (lint + format), `bandit` (static security lint),
   `pip-audit` (dependency CVEs), and the `tests` suite on Python 3.11/3.12 — but **only** for PRs
-  touching `src/idc_api/**`, `tests/**`, `pyproject.toml`, or `uv.lock`. `actionlint` likewise runs
-  only when a workflow changes. A docs-only PR therefore runs `gitleaks` and nothing else.
+  touching `src/idc_api/**`, `tests/**`, `pyproject.toml`, `uv.lock`, or `ci.yml` itself.
+  `actionlint` likewise runs only when a workflow changes. A docs-only PR therefore runs `gitleaks`
+  and nothing else.
 - **Dependency vulnerabilities, caught twice.** `pip-audit` fails CI on a PR whose dependencies
   carry a known CVE, and **Dependabot alerts + automated security updates** are enabled on the
   repository, so a CVE disclosed *after* a PR merges still opens a fix PR against `main` rather
