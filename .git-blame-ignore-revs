@@ -1,0 +1,8 @@
+# Revisions to skip when running `git blame`. These are pure-formatting commits
+# with no behavior change, so attributing lines to them is never useful.
+#
+# GitHub honors this file automatically. Locally, enable it once with:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply ruff format to src and tests
+e4aca14d861c7f31c4e2922fb0c12abcbeabfa7d
