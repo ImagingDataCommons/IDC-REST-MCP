@@ -38,6 +38,12 @@ exhaustion) rather than data disclosure. Full rationale and the guarded-SQL thre
   (Cloud Run's own request log already has caller IP, correlatable by timestamp).
 - **CI checks** on every PR: `ruff` (lint + format), `bandit` (static security lint), `pip-audit`
   (dependency CVEs), `gitleaks` (committed credentials), and the `tests` suite.
+- **Dependency vulnerabilities, caught twice.** `pip-audit` fails CI on a PR whose dependencies
+  carry a known CVE, and **Dependabot alerts + automated security updates** are enabled on the
+  repository, so a CVE disclosed *after* a PR merges still opens a fix PR against `main` rather
+  than waiting for someone to notice. [dependabot.yml](.github/dependabot.yml) separately schedules
+  weekly grouped *version* updates for the `uv` and `github-actions` ecosystems; security updates
+  are the repo setting, not that file, and are ungrouped so a fix ships on its own.
 - **Credential hygiene, in three layers.** The service itself holds no secrets, but the *deploy*
   path does: each tier's deployer service-account JSON key. Those live in GitHub **Environment
   secrets**, never in the repo — and three independent guards keep them out of it:
@@ -53,6 +59,16 @@ exhaustion) rather than data disclosure. Full rationale and the guarded-SQL thre
 
   If a credential is ever committed: **rotate it first.** Deleting the commit does not un-leak it;
   the blob stays reachable and this repo is public. Purge from history afterwards, not instead.
+
+> **These are repository settings, not files.** Secret scanning, push protection, Dependabot alerts,
+> and Dependabot security updates are all enabled under *Settings → Code security*. They are not
+> visible in any diff, so they can be switched off without a code review — this section is the only
+> record that they are meant to be on. Verify with:
+>
+> ```bash
+> gh api repos/ImagingDataCommons/IDC-REST-MCP \
+>   --jq '.security_and_analysis | {secret_scanning, secret_scanning_push_protection, dependabot_security_updates}'
+> ```
 - **Non-root container** — `Dockerfile` drops to an unprivileged user before serving.
 
 ## Known residual risks (public deployment)
