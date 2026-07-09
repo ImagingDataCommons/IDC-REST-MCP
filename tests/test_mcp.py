@@ -152,3 +152,19 @@ def test_http_app_serves_both_slash_forms_without_redirect():
             r = c.post(path, json=body, headers=headers, follow_redirects=False)
             assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
             assert r.json()["result"]["serverInfo"]["name"] == "IDC (Imaging Data Commons)"
+
+
+@pytest.mark.parametrize("configured", ["/mcp", "/mcp/"])
+def test_http_app_is_slash_agnostic_in_configured_path(configured):
+    """Both spellings are routed whichever one FastMCP was configured with. Only reachable by
+    editing the FastMCP(...) call — FASTMCP_STREAMABLE_HTTP_PATH cannot reach it, since
+    FastMCP.__init__ always passes streamable_http_path= explicitly and that outranks env."""
+    from mcp.server.fastmcp import FastMCP
+    from starlette.routing import Route
+
+    from idc_api.mcp.server import http_app
+
+    app = http_app(FastMCP("probe", streamable_http_path=configured))
+    paths = {r.path for r in app.router.routes if isinstance(r, Route)}
+    assert {"/mcp", "/mcp/"} <= paths
+    assert app.router.redirect_slashes is False

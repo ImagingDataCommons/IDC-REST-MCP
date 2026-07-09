@@ -588,7 +588,7 @@ def schema_resource(table: str) -> str:
 # --- entrypoint ---------------------------------------------------------------------------
 
 
-def http_app() -> Starlette:
+def http_app(server: FastMCP | None = None) -> Starlette:
     """Starlette app for the hosted (streamable-http) transport.
 
     Same app FastMCP builds, with one fix: serve the endpoint at both ``/mcp`` and ``/mcp/``
@@ -599,13 +599,28 @@ def http_app() -> Starlette:
     POST body, and a client or proxy that declines to replay a POST across a redirect sees the
     endpoint as broken. Both spellings now answer directly, so whichever path the caller (or the
     LB's ``/mcp``, ``/mcp/*`` rule) uses is the path that gets served.
+
+    Slash-agnostic in the configured path: whether ``streamable_http_path`` is ``/mcp`` or
+    ``/mcp/``, FastMCP registers whichever spelling it was given and we add the other.
     """
-    app = mcp.streamable_http_app()
-    base = mcp.settings.streamable_http_path.rstrip("/")
-    (route,) = [r for r in app.router.routes if isinstance(r, Route) and r.path == base]
+    server = server or mcp
+    app = server.streamable_http_app()
+    configured = server.settings.streamable_http_path
+    # "/mcp" and "/mcp/" are the same endpoint; a configured "/" has no distinct twin.
+    base = configured.rstrip("/")
+    spellings = [base, f"{base}/"] if base else ["/"]
+    found = {r.path: r for r in app.router.routes if isinstance(r, Route) and r.path in spellings}
+    if not found:
+        raise RuntimeError(
+            f"FastMCP registered no route at {configured!r} — the SDK's routing changed and "
+            "http_app() can no longer find the endpoint to alias."
+        )
     # methods=None on the source Route: the endpoint is an ASGI app, so it matches every method
     # (POST for RPC, GET for SSE, DELETE for session teardown). Mirror it exactly.
-    app.router.routes.append(Route(f"{base}/", endpoint=route.endpoint, name="mcp_trailing_slash"))
+    endpoint = next(iter(found.values())).endpoint
+    for path in spellings:
+        if path not in found:
+            app.router.routes.append(Route(path, endpoint=endpoint, name="mcp_alt_path"))
     # Both spellings now match exactly, so redirect_slashes can no longer fire for them; turn it
     # off so a typo'd path 404s honestly instead of bouncing the caller somewhere else.
     app.router.redirect_slashes = False
