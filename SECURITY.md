@@ -36,8 +36,44 @@ exhaustion) rather than data disclosure. Full rationale and the guarded-SQL thre
   themselves, not sensitive data — the cap is about log-line hygiene (one pathological query
   can't inflate a line), not confidentiality. Client IPs are not logged at the application level
   (Cloud Run's own request log already has caller IP, correlatable by timestamp).
-- **CI checks** on every PR: `ruff` (lint), `bandit` (static security lint), `pip-audit`
-  (dependency CVEs), and the `tests` suite.
+- **CI checks.** [gitleaks](.github/workflows/gitleaks.yml) (committed credentials) runs on **every**
+  PR — deliberately not path-filtered, since a credential can be committed in any file.
+  [ci.yml](.github/workflows/ci.yml) runs `ruff` (lint + format), `bandit` (static security lint),
+  `pip-audit` (dependency CVEs), and the `tests` suite on Python 3.11/3.12 — but **only** for PRs
+  touching `src/idc_api/**`, `tests/**`, `pyproject.toml`, `uv.lock`, or `ci.yml` itself.
+  `actionlint` likewise runs only when a workflow changes. A docs-only PR therefore runs `gitleaks`
+  and nothing else.
+- **Dependency vulnerabilities, caught twice.** `pip-audit` fails CI on a PR whose dependencies
+  carry a known CVE, and **Dependabot alerts + automated security updates** are enabled on the
+  repository, so a CVE disclosed *after* a PR merges still opens a fix PR against `main` rather
+  than waiting for someone to notice. [dependabot.yml](.github/dependabot.yml) separately schedules
+  weekly grouped *version* updates for the `uv` and `github-actions` ecosystems; security updates
+  are the repo setting, not that file, and are ungrouped so a fix ships on its own.
+- **Credential hygiene, in three layers.** The service itself holds no secrets, but the *deploy*
+  path does: each tier's deployer service-account JSON key. Those live in GitHub **Environment
+  secrets**, never in the repo — and three independent guards keep them out of it:
+  1. **Push protection** (GitHub secret scanning) rejects a push containing a recognized
+     credential *before* it reaches GitHub. This is the only guard that prevents rather than
+     detects. It does not cover pushes to forks.
+  2. **[gitleaks](.github/workflows/gitleaks.yml)** scans the full history on every PR, including
+     from forks, and flags generic private-key blocks and service-account JSON that provider
+     pattern-matching misses. Findings are redacted in the log (this repo's Actions logs are
+     public).
+  3. **`.gitignore`** covers the filenames deployer keys actually land under. It is the weakest
+     layer — a filename list is never exhaustive — and exists to catch the common `git add -A`.
+
+  If a credential is ever committed: **rotate it first.** Deleting the commit does not un-leak it;
+  the blob stays reachable and this repo is public. Purge from history afterwards, not instead.
+
+> **These are repository settings, not files.** Secret scanning, push protection, Dependabot alerts,
+> and Dependabot security updates are all enabled under *Settings → Code security*. They are not
+> visible in any diff, so they can be switched off without a code review — this section is the only
+> record that they are meant to be on. Verify with:
+>
+> ```bash
+> gh api repos/ImagingDataCommons/IDC-REST-MCP \
+>   --jq '.security_and_analysis | {secret_scanning, secret_scanning_push_protection, dependabot_security_updates}'
+> ```
 - **Non-root container** — `Dockerfile` drops to an unprivileged user before serving.
 
 ## Known residual risks (public deployment)
