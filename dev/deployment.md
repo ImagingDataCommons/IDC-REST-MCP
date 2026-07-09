@@ -508,8 +508,11 @@ autoscales like REST. Caveats:
 
 - **Downloads are disabled** on the hosted endpoint by design (manifests/URLs only); only the local
   **stdio** MCP transfers files.
-- **`POST /mcp/`** (trailing slash) returns a **307** redirect to `/mcp` (method + body preserved) —
-  point clients at the no-slash `…/mcp`.
+- **Both `…/mcp` and `…/mcp/` are served directly** — no redirect either way. FastMCP registers one
+  exact-path route at `/mcp`, so out of the box Starlette 307s `/mcp/` onto it; `http_app()` in
+  [mcp/server.py](../src/idc_api/mcp/server.py) registers the trailing-slash form as a real route
+  and turns `redirect_slashes` off, because making an RPC client replay its POST body across a
+  redirect is a bad bet. Either spelling works in a client config.
 - **Streaming / LB timeout:** stateless JSON tool calls return immediately, so the LB backend
   timeout (~30s default) is moot today; if a long-running or server-streamed tool is ever added,
   raise the backend-service timeout then.

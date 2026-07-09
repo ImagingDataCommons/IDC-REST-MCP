@@ -127,3 +127,28 @@ async def test_resources(server):
     assert "Data model" in list(guide)[0].content
     schema = await server.read_resource("idc://schema/index")
     assert "collection_id" in list(schema)[0].content
+
+
+def test_http_app_serves_both_slash_forms_without_redirect():
+    """`/mcp` and `/mcp/` both answer directly. FastMCP alone 307s the trailing-slash form to
+    the bare one, which forces clients and proxies to replay the POST body."""
+    from fastapi.testclient import TestClient
+
+    from idc_api.mcp.server import http_app
+
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"},
+        },
+    }
+    headers = {"Accept": "application/json, text/event-stream"}
+    with TestClient(http_app()) as c:
+        for path in ("/mcp", "/mcp/"):
+            r = c.post(path, json=body, headers=headers, follow_redirects=False)
+            assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
+            assert r.json()["result"]["serverInfo"]["name"] == "IDC (Imaging Data Commons)"

@@ -25,6 +25,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.applications import Starlette
+from starlette.routing import Route
 
 from ..core import schema as core_schema
 from ..core import version as core_version
@@ -586,6 +588,30 @@ def schema_resource(table: str) -> str:
 # --- entrypoint ---------------------------------------------------------------------------
 
 
+def http_app() -> Starlette:
+    """Starlette app for the hosted (streamable-http) transport.
+
+    Same app FastMCP builds, with one fix: serve the endpoint at both ``/mcp`` and ``/mcp/``
+    rather than redirecting between them. FastMCP registers a single *exact-path* Route at
+    ``streamable_http_path`` (default ``/mcp``), so Starlette's ``redirect_slashes`` answers a
+    request for ``/mcp/`` with a 307 to ``/mcp``. That redirect is correct HTTP but a poor fit
+    for an RPC endpoint fronted by a load balancer: it makes every ``/mcp/`` client re-issue its
+    POST body, and a client or proxy that declines to replay a POST across a redirect sees the
+    endpoint as broken. Both spellings now answer directly, so whichever path the caller (or the
+    LB's ``/mcp``, ``/mcp/*`` rule) uses is the path that gets served.
+    """
+    app = mcp.streamable_http_app()
+    base = mcp.settings.streamable_http_path.rstrip("/")
+    (route,) = [r for r in app.router.routes if isinstance(r, Route) and r.path == base]
+    # methods=None on the source Route: the endpoint is an ASGI app, so it matches every method
+    # (POST for RPC, GET for SSE, DELETE for session teardown). Mirror it exactly.
+    app.router.routes.append(Route(f"{base}/", endpoint=route.endpoint, name="mcp_trailing_slash"))
+    # Both spellings now match exactly, so redirect_slashes can no longer fire for them; turn it
+    # off so a typo'd path 404s honestly instead of bouncing the caller somewhere else.
+    app.router.redirect_slashes = False
+    return app
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="IDC MCP server")
     parser.add_argument(
@@ -598,11 +624,21 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.http:
+        import uvicorn
+
         if args.host:
             mcp.settings.host = args.host
         if args.port:
             mcp.settings.port = args.port
-        mcp.run(transport="streamable-http")
+        # Equivalent to mcp.run(transport="streamable-http"), but serving http_app() so the
+        # trailing-slash route above is present. uvicorn's proxy_headers default (with
+        # FORWARDED_ALLOW_IPS from the environment) is unchanged.
+        uvicorn.run(
+            http_app(),
+            host=mcp.settings.host,
+            port=mcp.settings.port,
+            log_level=mcp.settings.log_level.lower(),
+        )
     else:
         # Local stdio mode: the server is on the user's machine, so enable real downloads.
         ctx.settings.enable_local_download = True
