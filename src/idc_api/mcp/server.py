@@ -58,6 +58,7 @@ Cite with get_citations (per-dataset citations plus the IDC paper to acknowledge
 respect get_licenses (CC-BY vs CC-BY-NC). See `idc://guide` for the data model, the full tool
 list, and join examples."""
 
+
 # stateless_http=True / json_response=True make the hosted (streamable-http) transport
 # horizontally scalable on Cloud Run.
 #
@@ -251,7 +252,10 @@ def list_analysis_results() -> list[dict]:
 @guard
 def list_attributes() -> list[dict]:
     """List the attributes you can filter a cohort by (name, type, whether categorical).
-    Call this before build_cohort to learn valid filter attribute names."""
+    Call this before build_cohort to learn valid filter attribute names. These are a curated
+    subset of the `index` table chosen for cohort filtering — run_sql can query or filter on any
+    column in any table from list_tables, including `index` columns that are not filter
+    attributes."""
     return [a.model_dump(mode="json") for a in ctx.discovery.list_attributes()]
 
 
@@ -355,8 +359,11 @@ def build_cohort(
 def run_sql(sql: str, max_rows: int = 100) -> dict:
     """Run a read-only SQL SELECT against the IDC index using DuckDB and return the rows.
     Use for anything build_cohort can't express (GROUP BY, joins across tables, custom
-    aggregations, filters on columns that exist only in a specialized index — e.g. segmented
-    anatomy in seg_index). Only a single read-only SELECT/WITH statement is allowed; the
+    aggregations, or filtering on columns that are not filter attributes: the attributes from
+    list_attributes are a curated subset of `index`, so run_sql is how you reach the rest —
+    other `index` columns like SeriesDescription or PatientAge, and columns that exist only in a
+    specialized index such as segmented anatomy in seg_index). Only a single read-only SELECT/WITH
+    statement is allowed; the
     connection is sandboxed (no writes, no file/network access). Call list_tables /
     get_table_schema first to use correct table and column names. The main table is `index`.
     Per-collection clinical tables are in the `clinical` schema (query as `clinical.<table>`,
