@@ -248,10 +248,64 @@ file — the first becomes the *trigger*, the second becomes an *Environment set
 | [promote.yml](../.github/workflows/promote.yml) (tag) | push a `v*` tag | deploy test's digest to **prod** (behind the required-reviewer gate) |
 | [deploy.yml](../.github/workflows/deploy.yml) | reusable (`workflow_call`) | the shared deploy job the callers invoke |
 
-Prod deploys **test's** image, so a `v*` tag must point at a commit that was **already promoted to
-test** (its image exists in test's registry). Cut releases from a ref you've dispatched to test;
-tag a commit that never went through test and the prod deploy fails fast at the digest-resolve
-step.
+### Cutting a release
+
+Versioning policy — what a version *number* means, and when to bump which part — is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#versioning). This section is the mechanics.
+
+> [!IMPORTANT]
+> **Pushing a `v*` tag deploys to production**, and the glob matches pre-release tags too —
+> `v3.0.0b1` goes to prod exactly like `v3.0.0`. Never create a `v*` tag for bookkeeping, and
+> beware `git push --tags` firing a deploy from a stale local tag.
+
+Two constraints fall out of the security boundary above — prod runs test's exact bytes and never
+rebuilds:
+
+1. **A `v*` tag must point at a commit already promoted to test** (its image exists in test's
+   registry). Cut releases from a ref you've dispatched to test; tag a commit that never went
+   through test and the prod deploy fails fast at the digest-resolve step.
+2. **The version bump must be its own commit, and it must go through test.** The version comes from
+   the installed package metadata, baked into the image when *test* builds it; `IDC_API_BUILD` only
+   stamps the git SHA on top. Tagging `v3.0.0` on the same commit that shipped as `3.0.0b1` would
+   redeploy an image that still reports `3.0.0b1` at `/v3/version`. `promote.yml` guards this: on a
+   `v*` tag it asserts `tag == "v" + pyproject version` and fails **before** the reviewer gate if
+   they disagree.
+
+#### Steps
+
+1. **Bump and curate.** In one PR: set `version` in [pyproject.toml](../pyproject.toml), and in
+   [CHANGELOG.md](../CHANGELOG.md) rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`, open a
+   fresh empty `[Unreleased]`, and update the link definitions at the foot of the file. Merge it.
+2. **Promote to test.** Run [promote.yml](../.github/workflows/promote.yml) via workflow dispatch
+   against that merge commit. It builds the canonical image into test's registry and deploys
+   `testing-api.canceridc.dev`.
+3. **Verify** against test — `/v3/health`, `/v3/version` (confirm it reports the version you just
+   set), and the MCP handshake at `/mcp`.
+4. **Tag.** `git tag -a v3.0.0 -m "v3.0.0" <that commit> && git push origin v3.0.0`. This starts the
+   prod deploy, which waits on the `prod` Environment's required-reviewer gate.
+5. **Approve** the deployment, then confirm `api.imaging.datacommons.cancer.gov/v3/version`.
+6. **Publish a GitHub Release** on the tag, with the changelog section as its body. Tick **"Set as a
+   pre-release"** for `bN` / `rcN` tags.
+
+#### The v3 beta
+
+v3 ships to production as `3.0.0b1` before `3.0.0`.
+
+The beta is **not** a traffic-safety measure — it can't be one. The prod load balancer routes only
+`/v3/*` to the `idc-api-v3` service (see [Shared-domain path routing](#shared-domain-path-routing-as-deployed--the-glob-gotcha)
+below); every other path falls through to the legacy ESP backend. No existing caller reaches v3, so
+shipping it cannot break them. What the beta buys is the freedom to **change the `/v3` contract in
+response to real usage** without spending a major version — which, under the versioning policy,
+would otherwise cost a whole new `/v4` prefix — plus an honest signal to early adopters that the
+surface may move. Exit the beta by tagging `v3.0.0` once the contract has held under real use.
+
+Deliberately **not** doing a Cloud Run traffic split (`--tag beta --no-traffic` plus a percentage
+rollout) for this release. There is no incumbent v3 revision to canary against, and percentage
+splits are applied **per request**, not per session — an MCP streamable-http session could have its
+requests land on different revisions mid-conversation unless `--session-affinity` is enabled. If a
+canary becomes worthwhile for a later release (`3.1.0` onward, once v3 has consumers), use a
+**tagged revision** at zero traffic, which gets its own `beta---idc-api-v3-*.run.app` URL that
+testers opt into explicitly, rather than a percentage split of the live domain.
 
 ### One-time setup
 

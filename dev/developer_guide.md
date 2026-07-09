@@ -64,14 +64,17 @@ Fixtures live in [tests/conftest.py](../tests/conftest.py): `ctx` (the core
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on pushes to `main`
 (and manual dispatch) and on PRs that touch `src/idc_api/**`, `tests/**`, `pyproject.toml`,
-or `uv.lock`. It installs locked deps with `uv sync --extra dev`, then runs `ruff check` and
-`pytest tests` on Python 3.11 and 3.12. CI needs no secrets or GCP; its first test run
+or `uv.lock`. It installs locked deps with `uv sync --extra dev`, then lints, scans, and tests on
+Python 3.11 and 3.12. CI needs no secrets or GCP; its first test run
 downloads the specialized indices (`IDC_API_INCLUDE_INDICES=all` by default — set `none` to run
-from bundled data only). Before pushing, run the same two commands locally:
+from bundled data only). Before pushing, run the same checks locally:
 
 ```bash
-uv run ruff check src tests
-uv run pytest tests -q
+uv run ruff check src tests           # lint
+uv run ruff format --check src tests  # formatting
+uv run bandit -q -r src/idc_api       # static security lint
+uv run pip-audit                      # dependency CVEs
+uv run pytest tests -q                # tests
 ```
 
 ## Project layout
