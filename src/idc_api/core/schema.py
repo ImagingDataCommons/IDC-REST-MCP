@@ -171,7 +171,9 @@ def table_schema(table: str) -> dict:
     ]
     return {
         "name": table,
-        "description": TABLE_DESCRIPTION_OVERRIDES.get(table) or schema.get("table_description", "") or "",
+        "description": TABLE_DESCRIPTION_OVERRIDES.get(table)
+        or schema.get("table_description", "")
+        or "",
         "columns": columns,
     }
 

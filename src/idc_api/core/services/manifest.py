@@ -57,7 +57,9 @@ class ManifestService:
         urls, _ = self.manifest_lines(filters, source=source, limit=limit)
         return "\n".join(urls) + ("\n" if urls else "")
 
-    def download_info(self, filters: CohortFilters, total_series: int, size_TB: float) -> DownloadInfo:
+    def download_info(
+        self, filters: CohortFilters, total_series: int, size_TB: float
+    ) -> DownloadInfo:
         where, params = compile_filters(filters)
         preview, _ = self._series_urls(where, params, 5)
         truncated = total_series > self.settings.manifest_hard_cap

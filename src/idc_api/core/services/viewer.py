@@ -24,9 +24,7 @@ class ViewerService:
         viewer: str | None = None,
     ) -> ViewerURL:
         if not series_instance_uid and not study_instance_uid:
-            raise InvalidQueryError(
-                "Provide series_instance_uid or study_instance_uid (or both)."
-            )
+            raise InvalidQueryError("Provide series_instance_uid or study_instance_uid (or both).")
         if viewer is not None and viewer not in _VALID_VIEWERS:
             raise InvalidQueryError(f"viewer must be one of {_VALID_VIEWERS}.")
 
@@ -37,9 +35,7 @@ class ViewerService:
                 [series_instance_uid],
             ).rows
             if not rows:
-                raise NotFoundError(
-                    f"SeriesInstanceUID not found in IDC: {series_instance_uid!r}"
-                )
+                raise NotFoundError(f"SeriesInstanceUID not found in IDC: {series_instance_uid!r}")
             study_instance_uid = rows[0]["StudyInstanceUID"]
 
         modalities = [

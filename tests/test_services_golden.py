@@ -22,7 +22,9 @@ def test_stats_series_matches_idc_index(ctx, idc):
 
 
 def test_cohort_counts_match_idc_index(ctx, idc):
-    ours = ctx.cohort.counts(CohortFilters(terms={"Modality": ["MR"], "BodyPartExamined": ["BREAST"]}))
+    ours = ctx.cohort.counts(
+        CohortFilters(terms={"Modality": ["MR"], "BodyPartExamined": ["BREAST"]})
+    )
     df = idc.sql_query(
         "SELECT count(DISTINCT PatientID) p, count(DISTINCT StudyInstanceUID) st, "
         "count(DISTINCT SeriesInstanceUID) se FROM index "

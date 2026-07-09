@@ -67,8 +67,7 @@ class ClinicalService:
         """
         registered = self._require_clinical()
         sql = (
-            'SELECT collection_id, short_table_name, COUNT(*) AS column_count '
-            "FROM clinical_index "
+            "SELECT collection_id, short_table_name, COUNT(*) AS column_count FROM clinical_index "
         )
         params: list = []
         if collection_id:

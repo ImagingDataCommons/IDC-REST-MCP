@@ -49,9 +49,7 @@ class DiscoveryService:
             "COALESCE(sum(series_size_MB),0) size_mb FROM index"
         ).rows[0]
         collections = self.backend.query("SELECT count(*) c FROM collections_index").rows[0]["c"]
-        analysis = self.backend.query(
-            "SELECT count(*) c FROM analysis_results_index"
-        ).rows[0]["c"]
+        analysis = self.backend.query("SELECT count(*) c FROM analysis_results_index").rows[0]["c"]
         return Stats(
             idc_version=_idc_version(),
             collections=collections,
