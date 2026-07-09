@@ -65,10 +65,20 @@ Docs are split by audience — keep them in their lanes:
 - **[README.md](README.md)** — kept **lean**: intro, status, install, run one-liners,
   deploy, and pointers. **Do not** add endpoint/tool reference or usage detail here — that goes
   in the user guide.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — the **process**: branching, Conventional Commits, the
+  changelog rule, and the versioning policy (SemVer with MAJOR pinned to the URL prefix,
+  `/v3` ↔ `3.y.z`). **Do not** restate setup/test commands or the architecture invariants here —
+  it points at `dev/developer_guide.md` for those. The release *runbook* lives in
+  `dev/deployment.md`, not here: it is a maintainer task, not a contributor one.
+- **[CHANGELOG.md](CHANGELOG.md)** — hand-curated, [Keep a Changelog](https://keepachangelog.com/)
+  format. Describes **user-visible** change only (endpoints, MCP tools, response shapes, config
+  vars, defaults) — never refactors, CI, or dependency bumps. Not generated from commits.
 - **`dev/`** — design & contributor docs: [architecture.md](dev/architecture.md),
   [api_v3_plan.md](dev/api_v3_plan.md) (design rationale + SQL threat model),
-  [deployment.md](dev/deployment.md), [developer_guide.md](dev/developer_guide.md).
+  [deployment.md](dev/deployment.md) (Cloud Run tiers **and** the release runbook),
+  [developer_guide.md](dev/developer_guide.md) (setup, test, CI, the invariants, walkthroughs).
 
 When you add or change a capability: update `docs/user-guide.md`; mirror any conceptual
 change into the `idc://guide` resource; check whether `INSTRUCTIONS` needs a one-line touch (it
-usually shouldn't, if it stays lean); keep `README.md` a pointer.
+usually shouldn't, if it stays lean); keep `README.md` a pointer. If the change is user-visible,
+add a `CHANGELOG.md` entry under `## [Unreleased]` in the same PR.
