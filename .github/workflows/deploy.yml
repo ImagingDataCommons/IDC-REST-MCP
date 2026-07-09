@@ -154,7 +154,10 @@ jobs:
         run: |
           set -euo pipefail
           URL=$(gcloud run services describe idc-api-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
-          curl -sf "$URL/health"; echo
+          # All REST routes live under /v3 (health included); the *.run.app URL has no LB/ESP in
+          # front, so these hit the container directly.
+          curl -sf "$URL/v3/health"; echo
+          curl -sf "$URL/v3/version"; echo
           {
             echo "### REST API deployed to ${{ inputs.environment }}"
             echo "- URL: $URL"
