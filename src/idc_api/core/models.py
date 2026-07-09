@@ -134,7 +134,9 @@ class ClinicalTableInfo(BaseModel):
         "verbatim rather than reconstructing it from table_name.",
     )
     collection_id: str = Field(..., description="Collection this clinical table belongs to.")
-    column_count: int = Field(..., description="Number of documented columns (from clinical_index).")
+    column_count: int = Field(
+        ..., description="Number of documented columns (from clinical_index)."
+    )
     description: str = ""
 
 

@@ -243,9 +243,7 @@ class DuckDBBackend(QueryBackend):
         """Tables actually present in the open database, ordered by the schema registry
         (bundled first, then specialized), so the listing reflects this build exactly."""
         cur = self._con.cursor()
-        cur.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
-        )
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")
         present = {r[0] for r in cur.fetchall()}
         ordered = [t for t in schema.registered_table_names() if t in present]
         ordered += sorted(present - set(ordered))  # any unexpected tables, deterministically

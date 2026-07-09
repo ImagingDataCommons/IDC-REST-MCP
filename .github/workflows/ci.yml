@@ -48,6 +48,9 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check src tests
 
+      - name: Format (ruff)
+        run: uv run ruff format --check src tests
+
       - name: Security lint (bandit)
         run: uv run bandit -q -r src/idc_api
 

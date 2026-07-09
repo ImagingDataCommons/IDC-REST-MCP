@@ -47,7 +47,9 @@ async def test_get_stats(server, parse_mcp):
 
 
 async def test_get_attribute_values(server, parse_mcp):
-    data = parse_mcp(await server.call_tool("get_attribute_values", {"attribute": "Modality", "limit": 3}))
+    data = parse_mcp(
+        await server.call_tool("get_attribute_values", {"attribute": "Modality", "limit": 3})
+    )
     assert data["attribute"] == "Modality" and data["values"]
 
 
