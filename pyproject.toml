@@ -10,7 +10,7 @@ keywords = ["IDC", "DICOM", "cancer imaging", "MCP", "REST", "idc-index"]
 
 dependencies = [
     # Query engine + data
-    "idc-index>=0.12.2",
+    "idc-index>=0.12.4",
     "duckdb>=1.5.4",
     "pyarrow>=15",
     # Shared models / settings

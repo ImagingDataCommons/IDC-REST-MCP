@@ -204,10 +204,10 @@ FILTERABLE_ATTRIBUTES: list[dict] = [
         "kind": "term",
         "categorical": True,
         "note": (
-            "Caution: this is the body region the source acquisition imaged — for derived "
-            "series (SEG/RTSTRUCT) it does NOT say what was segmented. Segmented anatomy "
-            "lives in seg_index.SegmentedPropertyType_CodeMeanings (an array column — join "
-            "seg_index to index via SQL and match with list_contains)."
+            "For derived (SEG/RTSTRUCT) series this is the source acquisition, not the "
+            "segmented anatomy — to filter by what was segmented, join seg_index in SQL "
+            "and match the array column with "
+            "list_contains(seg_index.SegmentedPropertyType_CodeMeanings, '<CodeMeaning>')."
         ),
     },
     {"name": "Manufacturer", "kind": "term", "categorical": True},
