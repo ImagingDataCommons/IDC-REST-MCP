@@ -132,7 +132,7 @@ open "$URL/v3/docs"   # Swagger UI
 
 The image bakes whatever `idc-index-data` resolves at build time. To publish a new IDC version,
 **rebuild and redeploy** (steps 2–3). For reproducibility, pin the version in
-[pyproject.toml](../pyproject.toml) (e.g. `idc-index==0.12.2`, which pulls a specific
+[pyproject.toml](../pyproject.toml) (e.g. `idc-index==0.12.4`, which pulls a specific
 `idc-index-data`) so a rebuild is deterministic; bump the pin to move IDC versions. The running
 version is always reported at `/v3/version`.
 
