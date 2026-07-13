@@ -32,7 +32,16 @@ class HSTSMiddleware:
 
         async def send_with_hsts(message) -> None:
             if message["type"] == "http.response.start":
-                message["headers"] = [*message.get("headers", []), self._header]
+                # Replace, never append alongside: a duplicate Strict-Transport-Security
+                # (e.g. from a proxy or a future middleware) is ambiguous to clients.
+                message["headers"] = [
+                    *(
+                        (name, value)
+                        for name, value in message.get("headers", [])
+                        if name.lower() != b"strict-transport-security"
+                    ),
+                    self._header,
+                ]
             await send(message)
 
         await self.app(scope, receive, send_with_hsts)
