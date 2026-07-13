@@ -483,6 +483,7 @@ Environment variables (prefix `IDC_API_`):
 | `MANIFEST_HARD_CAP` | `100000` | Max series enumerated into a manifest |
 | `ENABLE_LOCAL_DOWNLOAD` | `false` | Allow `download` to write files locally |
 | `CORS_ALLOW_ORIGINS` | `["*"]` | Allowed CORS origins (REST). List value — set as JSON, e.g. `["https://app.example.com"]` |
+| `HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security` max-age (seconds) added to every REST and hosted-MCP response. Default is the production value (1 year); dev/test deploys use `3600` so a bad deploy can't lock browsers out for a year. `0` disables the header |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | REST bind address |
 | `SQL_LOG_MODE` | `snippet` | How `run_sql`/`POST /v3/sql` queries appear in the structured audit log: `snippet` (readable, capped) or `hash` (a short digest, no query text at all) |
 | `SQL_LOG_CHARS` | `200` | Snippet length when `SQL_LOG_MODE=snippet` |

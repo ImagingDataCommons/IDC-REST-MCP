@@ -135,6 +135,7 @@ def test_http_app_serves_both_slash_forms_without_redirect():
     from fastapi.testclient import TestClient
 
     from idc_api.mcp.server import http_app
+    from idc_api.settings import get_settings
 
     body = {
         "jsonrpc": "2.0",
@@ -152,6 +153,12 @@ def test_http_app_serves_both_slash_forms_without_redirect():
             r = c.post(path, json=body, headers=headers, follow_redirects=False)
             assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
             assert r.json()["result"]["serverInfo"]["name"] == "IDC (Imaging Data Commons)"
+            # NCI policy: HSTS on every response of the hosted transport, same as REST. The
+            # expected max-age comes from settings, which the environment may override —
+            # 0 is documented as "disabled", in which case the header must be absent.
+            max_age = get_settings().hsts_max_age
+            expected = f"max-age={max_age}; includeSubDomains" if max_age else None
+            assert r.headers.get("strict-transport-security") == expected
 
 
 @pytest.mark.parametrize("configured", ["/mcp", "/mcp/"])

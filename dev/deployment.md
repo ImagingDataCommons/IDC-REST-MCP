@@ -95,6 +95,13 @@ Set `IDC_API_DUCKDB_THREADS` ≈ `--cpu` so concurrent requests don't oversubscr
 > pydantic-settings expects JSON (`["https://app.example.com"]`), which is awkward to quote in
 > gcloud. The default `["*"]` is appropriate for an open API.
 
+> **HSTS.** NCI security policy requires `Strict-Transport-Security` on every response, and the
+> application injects it (Cloud Run terminates TLS but adds no security headers). The default
+> max-age is the policy value of one year, so a plain deploy is compliant; the deploy workflow
+> sets `IDC_API_HSTS_MAX_AGE=3600` on **dev/test** so a misconfigured deploy can't lock browsers
+> out of the domain for a year, and the year on prod. Both the REST app and the hosted MCP
+> transport send it.
+
 ### Rate limiting / abuse protection
 
 `--allow-unauthenticated` means anyone can call `run_sql`/manifest endpoints; `--concurrency`

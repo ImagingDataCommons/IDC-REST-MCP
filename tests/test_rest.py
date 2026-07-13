@@ -44,6 +44,29 @@ def test_root_redirect_is_not_a_catch_all(client):
         assert client.get(path, follow_redirects=False).status_code == 404, path
 
 
+def test_hsts_header_on_every_response(client):
+    from idc_api.settings import get_settings
+
+    # NCI security policy: HSTS on all responses — the app injects it (Cloud Run doesn't), so
+    # it must land on success, redirect, and 404 alike. Expected max-age comes from settings
+    # (default one year; IDC_API_HSTS_MAX_AGE may override it — 0 documented as "disabled",
+    # in which case the header must be absent).
+    max_age = get_settings().hsts_max_age
+    expected = f"max-age={max_age}; includeSubDomains" if max_age else None
+    assert client.get("/v3/health").headers.get("strict-transport-security") == expected
+    r = client.get("/", follow_redirects=False)
+    assert r.headers.get("strict-transport-security") == expected
+    assert client.get("/zzz").headers.get("strict-transport-security") == expected
+    # CORS preflights are answered by CORSMiddleware without calling inward, so this only
+    # passes while HSTSMiddleware stays outside CORS (see the ordering comment in app.py).
+    preflight = client.options(
+        "/v3/sql",
+        headers={"Origin": "https://example.com", "Access-Control-Request-Method": "POST"},
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers.get("strict-transport-security") == expected
+
+
 def test_collections_and_detail(client):
     cols = client.get("/v3/collections").json()
     assert any(c["collection_id"] == "rider_pilot" for c in cols)

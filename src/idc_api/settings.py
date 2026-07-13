@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +67,15 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = ["*"]
     host: str = "127.0.0.1"
     port: int = 8000
+
+    # --- HTTP security headers (REST + hosted MCP) ---
+    # Strict-Transport-Security max-age in seconds, added to every HTTP response — required by
+    # NCI security policy, and the application's job since Cloud Run terminates TLS without
+    # injecting the header. Defaults to one year (the prod/policy value); dev and test deploys
+    # set 3600 so a misconfigured deploy can't lock browsers out of the domain for a year.
+    # 0 disables the header entirely; negative values are rejected at startup so a typo can't
+    # silently disable HSTS.
+    hsts_max_age: int = Field(default=31536000, ge=0)
 
     # --- Audit logging ---
     # How much of a caller's SQL (run_sql tool / POST /v3/sql) lands in the structured audit
