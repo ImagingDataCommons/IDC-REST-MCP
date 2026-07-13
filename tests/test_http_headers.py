@@ -8,7 +8,7 @@ from idc_api.http_headers import HSTSMiddleware
 
 
 def _run(app, scope):
-    """Drive an ASGI app for one request; return the response-start messages."""
+    """Drive an ASGI app for one request; return every ASGI message it sent."""
     sent = []
 
     async def receive():  # pragma: no cover - never called for these apps

@@ -154,9 +154,11 @@ def test_http_app_serves_both_slash_forms_without_redirect():
             assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
             assert r.json()["result"]["serverInfo"]["name"] == "IDC (Imaging Data Commons)"
             # NCI policy: HSTS on every response of the hosted transport, same as REST. The
-            # expected max-age comes from settings, which the environment may override.
-            expected = f"max-age={get_settings().hsts_max_age}; includeSubDomains"
-            assert r.headers["strict-transport-security"] == expected
+            # expected max-age comes from settings, which the environment may override —
+            # 0 is documented as "disabled", in which case the header must be absent.
+            max_age = get_settings().hsts_max_age
+            expected = f"max-age={max_age}; includeSubDomains" if max_age else None
+            assert r.headers.get("strict-transport-security") == expected
 
 
 @pytest.mark.parametrize("configured", ["/mcp", "/mcp/"])
