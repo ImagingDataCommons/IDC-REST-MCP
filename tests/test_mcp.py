@@ -153,9 +153,7 @@ def test_http_app_serves_both_slash_forms_without_redirect():
             assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
             assert r.json()["result"]["serverInfo"]["name"] == "IDC (Imaging Data Commons)"
             # NCI policy: HSTS on every response of the hosted transport, same as REST.
-            assert (
-                r.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
-            )
+            assert r.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
 
 
 @pytest.mark.parametrize("configured", ["/mcp", "/mcp/"])
