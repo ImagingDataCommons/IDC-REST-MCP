@@ -13,6 +13,12 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Added
+
+- **HSTS**: every REST and hosted-MCP response now carries a `Strict-Transport-Security` header
+  (NCI security policy). Max-age is configurable via `IDC_API_HSTS_MAX_AGE` — default one year;
+  dev/test deploys use 3600.
+
 
 ## [3.0.0b1] — 2026-07-13
 

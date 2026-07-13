@@ -44,6 +44,17 @@ def test_root_redirect_is_not_a_catch_all(client):
         assert client.get(path, follow_redirects=False).status_code == 404, path
 
 
+def test_hsts_header_on_every_response(client):
+    # NCI security policy: HSTS on all responses — the app injects it (Cloud Run doesn't), so
+    # it must land on success, redirect, and 404 alike. Default max-age is the prod/policy
+    # value; dev/test deploys override via IDC_API_HSTS_MAX_AGE.
+    expected = "max-age=31536000; includeSubDomains"
+    assert client.get("/v3/health").headers["strict-transport-security"] == expected
+    r = client.get("/", follow_redirects=False)
+    assert r.headers["strict-transport-security"] == expected
+    assert client.get("/zzz").headers["strict-transport-security"] == expected
+
+
 def test_collections_and_detail(client):
     cols = client.get("/v3/collections").json()
     assert any(c["collection_id"] == "rider_pilot" for c in cols)

@@ -100,6 +100,10 @@ jobs:
           MAX_INSTANCES: ${{ vars.MAX_INSTANCES }}
           DUCKDB_MEMORY_LIMIT: ${{ vars.DUCKDB_MEMORY_LIMIT }}
           DUCKDB_THREADS: ${{ vars.DUCKDB_THREADS }}
+          # NCI policy: HSTS everywhere, injected by the app. Prod gets the policy max-age of
+          # one year; dev/test get one hour so a misconfigured deploy can't lock browsers out
+          # of the domain for a year. Override per tier with an HSTS_MAX_AGE Environment var.
+          HSTS_MAX_AGE: ${{ vars.HSTS_MAX_AGE || (inputs.environment == 'prod' && '31536000' || '3600') }}
         run: |
           set -euo pipefail
           args=(
@@ -111,7 +115,7 @@ jobs:
             --concurrency "${CONCURRENCY:-40}"
             --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-5}"
             --cpu-boost
-            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL}"
+            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL},IDC_API_HSTS_MAX_AGE=${HSTS_MAX_AGE}"
           )
           [ -n "${RUNTIME_SA:-}" ] && args+=( --service-account "$RUNTIME_SA" )
           gcloud run deploy idc-api-v3 "${args[@]}"
@@ -130,6 +134,8 @@ jobs:
           MAX_INSTANCES: ${{ vars.MAX_INSTANCES }}
           DUCKDB_MEMORY_LIMIT: ${{ vars.DUCKDB_MEMORY_LIMIT }}
           DUCKDB_THREADS: ${{ vars.DUCKDB_THREADS }}
+          # Same HSTS tiering as the REST deploy above.
+          HSTS_MAX_AGE: ${{ vars.HSTS_MAX_AGE || (inputs.environment == 'prod' && '31536000' || '3600') }}
         run: |
           set -euo pipefail
           args=(
@@ -141,7 +147,7 @@ jobs:
             --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-5}"
             --command idc-mcp
             "--args=--http,--host,0.0.0.0,--port,8080"
-            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL}"
+            --set-env-vars "IDC_API_DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-3GB},IDC_API_DUCKDB_THREADS=${DUCKDB_THREADS:-2},IDC_API_BUILD=${BUILD_LABEL},IDC_API_HSTS_MAX_AGE=${HSTS_MAX_AGE}"
           )
           [ -n "${RUNTIME_SA:-}" ] && args+=( --service-account "$RUNTIME_SA" )
           gcloud run deploy idc-mcp-v3 "${args[@]}"
@@ -158,6 +164,8 @@ jobs:
           # front, so these hit the container directly.
           curl -sf "$URL/v3/health"; echo
           curl -sf "$URL/v3/version"; echo
+          # NCI policy requires HSTS on every response; fail the deploy if the header is gone.
+          curl -sfI "$URL/v3/health" | grep -i '^strict-transport-security:'
           {
             echo "### REST API deployed to ${{ inputs.environment }}"
             echo "- URL: $URL"

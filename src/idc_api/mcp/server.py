@@ -33,6 +33,7 @@ from ..core import version as core_version
 from ..core.context import AppContext
 from ..core.errors import IDCAPIError
 from ..core.models import CohortFilters, NumericRange
+from ..http_headers import HSTSMiddleware
 from ..settings import get_settings
 
 logger = logging.getLogger("idc_api.mcp")
@@ -624,6 +625,11 @@ def http_app(server: FastMCP | None = None) -> Starlette:
     # Both spellings now match exactly, so redirect_slashes can no longer fire for them; turn it
     # off so a typo'd path 404s honestly instead of bouncing the caller somewhere else.
     app.router.redirect_slashes = False
+    # HSTS on every response of the hosted transport, same as the REST app (NCI policy; Cloud
+    # Run terminates TLS but injects no security headers). stdio mode never runs through here.
+    settings = get_settings()
+    if settings.hsts_max_age > 0:
+        app.add_middleware(HSTSMiddleware, max_age=settings.hsts_max_age)
     return app
 
 

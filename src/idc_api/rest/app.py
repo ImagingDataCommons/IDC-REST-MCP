@@ -39,6 +39,7 @@ from ..core.models import (
     ViewerURL,
 )
 from ..core.version import server_version
+from ..http_headers import HSTSMiddleware
 from ..settings import get_settings
 
 API_PREFIX = "/v3"
@@ -179,6 +180,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added after CORS so it wraps it (last-added middleware is outermost): the HSTS header
+    # then lands on every response, including CORS preflights that short-circuit here.
+    if settings.hsts_max_age > 0:
+        app.add_middleware(HSTSMiddleware, max_age=settings.hsts_max_age)
 
     @app.middleware("http")
     async def _audit_log(request: Request, call_next):
