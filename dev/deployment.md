@@ -146,7 +146,7 @@ version is always reported at `/v3/version`.
 ## Optional: remote MCP service (HTTP)
 
 Deploy the same image with the MCP command to expose the tools over MCP streamable-http
-(download is disabled in hosted mode — manifests/URLs only):
+(retrieval is manifests/URLs only — the server never transfers files):
 
 ```bash
 gcloud run deploy idc-mcp-v3 \
@@ -195,8 +195,7 @@ The MCP endpoint is then `https://<service-url>/mcp` (note the `/mcp` path).
 > API** — no session affinity or single-instance pin needed. This is safe because the server
 > exposes only client-initiated tools + static resources (no server→client sampling,
 > elicitation, subscriptions, or streamed progress, which are the only things that would need a
-> persistent session). The local **stdio** MCP remains the primary path for end users — it's the
-> only mode that can download files to the user's machine.
+> persistent session).
 
 ## Notes
 
@@ -552,12 +551,12 @@ curl -sI https://dev-api.canceridc.dev/v3/version | grep -i server   # want: Goo
 #### Remote MCP over the shared domain — verified behavior
 
 `/mcp` is functional **end-to-end**, not just the handshake — verified on `dev-api.canceridc.dev`:
-`initialize`, `tools/list` (19 tools), and `tools/call get_idc_version` (real result) all succeed.
+`initialize`, `tools/list` (18 tools), and `tools/call get_idc_version` (real result) all succeed.
 It runs **stateless** (`stateless_http=True`) — no `Mcp-Session-Id`, no session affinity, so it
 autoscales like REST. Caveats:
 
-- **Downloads are disabled** on the hosted endpoint by design (manifests/URLs only); only the local
-  **stdio** MCP transfers files.
+- **Retrieval is manifests/URLs only** on every transport — the server never transfers files;
+  callers download directly from the public S3/GCS buckets (`idc` CLI / s5cmd).
 - **Both `…/mcp` and `…/mcp/` are served directly** — no redirect either way. FastMCP registers one
   exact-path route at `/mcp`, so out of the box Starlette 307s `/mcp/` onto it; `http_app()` in
   [mcp/server.py](../src/idc_api/mcp/server.py) registers the trailing-slash form as a real route
