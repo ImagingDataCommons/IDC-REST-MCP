@@ -96,8 +96,9 @@ class ManifestService:
             note=(
                 "URLs point to public AWS S3 (and GCS) buckets; no credentials needed. Easiest: "
                 "the `idc` CLI commands above (also handles either cloud). Driving it yourself: "
-                "`s5cmd --no-sign-request` against these s3:// URLs for AWS; for GCS, get "
-                "source=gcs URLs from get_cohort_urls/manifest.txt (still s3:// — GCS's "
-                "S3-compatible endpoint) and add `--endpoint-url https://storage.googleapis.com`."
+                "`s5cmd --no-sign-request` against these s3:// URLs for AWS; for GCS, request "
+                "source=gcs from the get_cohort_urls tool (MCP) or POST /v3/cohort/manifest.txt "
+                "(REST) — still s3:// (GCS's S3-compatible endpoint) — and add `--endpoint-url "
+                "https://storage.googleapis.com`."
             ),
         )
