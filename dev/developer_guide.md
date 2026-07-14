@@ -26,8 +26,8 @@ upgrade).
 
 ```bash
 uv run idc-api                      # REST API → http://127.0.0.1:8000  (Swagger at /v3/docs)
-uv run idc-mcp                      # MCP server over stdio (local; download enabled)
-uv run idc-mcp --http --port 8080   # MCP over streamable-http (hosted; download disabled)
+uv run idc-mcp                      # MCP server over stdio (local)
+uv run idc-mcp --http --port 8080   # MCP over streamable-http (hosted)
 ```
 
 Inspect the MCP tools interactively:
@@ -50,7 +50,7 @@ uv run --directory . pytest tests/test_backend_guards.py -q   # one file
 |---|---|
 | [test_backend_guards.py](../tests/test_backend_guards.py) | SQL sandbox: read-only, external access blocked, single-statement, row cap, timeout |
 | [test_services_golden.py](../tests/test_services_golden.py) | **Golden:** results equal `idc-index` (IDCClient) on the same Parquet |
-| [test_rest.py](../tests/test_rest.py) | REST endpoint shapes, 404/501 mapping, SQL guard, OpenAPI |
+| [test_rest.py](../tests/test_rest.py) | REST endpoint shapes, error mapping, SQL guard, OpenAPI |
 | [test_mcp.py](../tests/test_mcp.py) | Tools registered, prescriptive descriptions, calls, clean errors, resources |
 | [test_parity.py](../tests/test_parity.py) | **Parity:** core service == REST == MCP for the same filter |
 | [test_specialized_indices.py](../tests/test_specialized_indices.py) | Specialized indices fetched + exposed to SQL + joinable to `index` |
@@ -91,7 +91,7 @@ src/idc_api/
     backend/
       base.py            # QueryBackend interface
       duckdb_backend.py  # read-only DuckDB over idc-index Parquet
-    services/            # discovery, cohort, query, clinical, manifest, viewer, citations, licenses, download
+    services/            # discovery, cohort, query, clinical, manifest, viewer, citations, licenses
   rest/app.py            # FastAPI app + routes
   mcp/server.py          # FastMCP tools + resources + entrypoint
 tests/                   # pytest suite
