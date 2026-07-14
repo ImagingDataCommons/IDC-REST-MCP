@@ -94,10 +94,29 @@ def test_cohort_manifest(client):
     assert any("rider_pilot" in cmd for cmd in m["download"]["idc_commands"])
 
 
+def test_remap_bucket_for_gcs():
+    from idc_api.core.services.manifest import remap_bucket_for_gcs
+
+    # Remapped buckets: scheme stays s3://, only the bucket name changes.
+    assert remap_bucket_for_gcs("s3://idc-open-data-two/abc/def") == "s3://idc-open-idc1/abc/def"
+    assert remap_bucket_for_gcs("s3://idc-open-data-cr/x") == "s3://idc-open-cr/x"
+    # idc-open-data (and any other bucket not in the remap table) is unchanged.
+    assert remap_bucket_for_gcs("s3://idc-open-data/x/y") == "s3://idc-open-data/x/y"
+
+
 def test_manifest_text_gcs(client):
-    body = {"filters": {"terms": {"collection_id": ["rider_pilot"]}}, "source": "gcs", "limit": 2}
-    text = client.post("/v3/cohort/manifest.txt", json=body).text.strip()
-    assert text.splitlines()[0].startswith("gs://")
+    # source=gcs keeps the s3:// scheme (GCS is reached via its S3-compatible endpoint, matching
+    # idc-index) — only the bucket name changes, and only for two buckets that aren't in play
+    # here, so this collection's GCS manifest is identical to its AWS one.
+    filters = {"filters": {"terms": {"collection_id": ["rider_pilot"]}}, "limit": 2}
+    aws_text = client.post(
+        "/v3/cohort/manifest.txt", json={**filters, "source": "aws"}
+    ).text.strip()
+    gcs_text = client.post(
+        "/v3/cohort/manifest.txt", json={**filters, "source": "gcs"}
+    ).text.strip()
+    assert gcs_text.splitlines()[0].startswith("s3://")
+    assert gcs_text == aws_text
 
 
 def test_sql_ok_and_guarded(client):
