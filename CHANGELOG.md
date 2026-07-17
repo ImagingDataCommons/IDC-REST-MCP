@@ -13,6 +13,10 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `/v3/viewer-url` OpenAPI examples (the values Swagger UI's "Try it out" pre-fills) used a StudyInstanceUID and SeriesInstanceUID that are not present in IDC, so running the example returned a `not_found` error instead of a viewer link. Both now use resolvable UIDs.
+
 ## [3.0.0b2] — 2026-07-14
 
 Beta iteration: drops the local-download surface (a beta contract change) and fixes
