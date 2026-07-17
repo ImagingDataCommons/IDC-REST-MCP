@@ -7,7 +7,10 @@ name: Deploy to Cloud Run (reusable)
 #   Secrets:   GCP_PROJECT_ID, GCP_SA_KEY   (deployer SA for that tier's GCP project)
 #   Variables: RUNTIME_SA (dedicated Cloud Run runtime SA; optional — default compute SA if unset)
 #              REGION, AR_REPO, CPU, MEMORY, CONCURRENCY, MIN_INSTANCES, MAX_INSTANCES,
-#              DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS   (all optional; defaults below)
+#              DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS, HSTS_MAX_AGE   (all optional; defaults below)
+#              PUBLIC_BASE_URL (tier's public URL behind the load balancer; used by the post-deploy
+#                example smoke test — falls back to the *.run.app URL if unset)
+#              SMOKE_SOFT_FAIL (set truthy to downgrade example-smoke failures to warnings)
 #
 # Image source: by default the image is resolved from THIS tier's own registry
 #   <REGION>-docker.pkg.dev/<GCP_PROJECT_ID>/<AR_REPO>/idc-api-v3:<build_label>
@@ -187,6 +190,13 @@ jobs:
         env:
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
           REGION: ${{ vars.REGION || 'us-central1' }}
+          # The tier's public URL behind the load balancer (e.g. https://api.imaging.datacommons.cancer.gov).
+          # Set it as a per-Environment variable so this exercises the surface real users hit —
+          # the LB / shared-domain URL map is exactly where routing regressions live (the /v3/* glob
+          # gotcha, the ESP fallback; see dev/deployment.md "Shared-domain path routing"), which the
+          # *.run.app URL bypasses. Unset (e.g. before a tier's domain is attached) falls back to the
+          # direct Cloud Run URL so the step still runs.
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           # Per-tier escape hatch: set SMOKE_SOFT_FAIL=1 as an Environment variable to keep a tier
           # green when a declared example goes stale against that tier's data (still annotated).
           SMOKE_SOFT_FAIL: ${{ vars.SMOKE_SOFT_FAIL }}
@@ -195,8 +205,21 @@ jobs:
           # Exercise every declared OpenAPI example against the just-deployed instance, so a
           # documented value that doesn't resolve (a removed UID, a stale example) fails the
           # deploy instead of silently misleading Swagger-UI users. Reads the live spec — no deps.
-          URL=$(gcloud run services describe idc-api-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
-          python3 dev/smoke_openapi_examples.py "$URL"
+          if [ -n "${PUBLIC_BASE_URL:-}" ]; then
+            BASE="${PUBLIC_BASE_URL%/}"
+            echo "Smoke-testing $BASE (public URL, behind the load balancer)."
+            # The LB path-routes to Cloud Run; guard against a URL-map regression that lets the
+            # legacy ESP answer instead (nginx "Method does not exist"). Cloud Run identifies
+            # itself as "Google Frontend"; the ESP does not. See dev/deployment.md.
+            if ! curl -sfI "$BASE/v3/version" | grep -iq '^server:[[:space:]]*Google Frontend'; then
+              echo "::error::$BASE/v3/version is not served by Cloud Run (missing 'Server: Google Frontend') — possible load-balancer / ESP routing regression."
+              exit 1
+            fi
+          else
+            BASE=$(gcloud run services describe idc-api-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
+            echo "::warning::PUBLIC_BASE_URL not set for '${{ inputs.environment }}'; smoke-testing the direct Cloud Run URL $BASE, which bypasses the load balancer. Set PUBLIC_BASE_URL as an Environment variable to cover the public surface."
+          fi
+          python3 dev/smoke_openapi_examples.py "$BASE"
 
       - name: Verify MCP service
         if: ${{ inputs.target == 'mcp' || inputs.target == 'both' }}
