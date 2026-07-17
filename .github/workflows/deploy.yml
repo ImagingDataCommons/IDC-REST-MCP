@@ -48,6 +48,12 @@ jobs:
       group: deploy-${{ inputs.environment }}
       cancel-in-progress: false
     steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        # Needed for dev/smoke_openapi_examples.py in the post-deploy verify. The script is
+        # spec-driven (it reads the deployed /v3/openapi.json), so the checked-out ref only has
+        # to supply the script itself.
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -175,6 +181,22 @@ jobs:
             echo "- Build: \`${{ inputs.build_label }}\`"
             echo "- Image: \`${{ steps.img.outputs.image }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke-test OpenAPI examples (REST)
+        if: ${{ inputs.target == 'rest' || inputs.target == 'both' }}
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          # Per-tier escape hatch: set SMOKE_SOFT_FAIL=1 as an Environment variable to keep a tier
+          # green when a declared example goes stale against that tier's data (still annotated).
+          SMOKE_SOFT_FAIL: ${{ vars.SMOKE_SOFT_FAIL }}
+        run: |
+          set -euo pipefail
+          # Exercise every declared OpenAPI example against the just-deployed instance, so a
+          # documented value that doesn't resolve (a removed UID, a stale example) fails the
+          # deploy instead of silently misleading Swagger-UI users. Reads the live spec — no deps.
+          URL=$(gcloud run services describe idc-api-v3 --project "$PROJECT" --region "$REGION" --format='value(status.url)')
+          python3 dev/smoke_openapi_examples.py "$URL"
 
       - name: Verify MCP service
         if: ${{ inputs.target == 'mcp' || inputs.target == 'both' }}

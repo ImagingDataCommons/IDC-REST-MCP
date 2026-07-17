@@ -126,7 +126,19 @@ URL=$(gcloud run services describe idc-api-v3 --region "$REGION" --format='value
 curl -s "$URL/v3/health"; echo
 curl -s "$URL/v3/version"; echo
 open "$URL/v3/docs"   # Swagger UI
+
+# Exercise every documented OpenAPI example against the deployment (no dependencies):
+python3 dev/smoke_openapi_examples.py "$URL"
 ```
+
+> **Post-deploy checks run automatically on every tier.** The reusable
+> [deploy.yml](../.github/workflows/deploy.yml) runs `/v3/health` + `/v3/version` + HSTS assertions
+> and then `dev/smoke_openapi_examples.py`, which reads the deployed `/v3/openapi.json` and fires a
+> request built from each declared example — so a documented value that no longer resolves (a
+> removed StudyInstanceUID, a stale example) fails the deploy rather than quietly misleading
+> Swagger-UI users. Because it runs against real tier data it can go red when IDC re-releases and
+> an example UID is retired; fix the example, or set the `SMOKE_SOFT_FAIL` Environment variable to
+> downgrade that tier to a warning.
 
 > **Don't use `/healthz` as a health-check path on Cloud Run's default `*.run.app` domain.**
 > Google's front end reserves that exact path and returns its own generic 404 page for it
