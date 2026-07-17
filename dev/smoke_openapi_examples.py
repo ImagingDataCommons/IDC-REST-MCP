@@ -20,8 +20,8 @@ re-releases data (series removed between versions). That brittleness is the poin
 early-warning signal a unit test against a fixture DB cannot give.
 
 Usage:
-    python dev/smoke_openapi_examples.py https://api.imaging.datacommons.cancer.gov
-    SMOKE_BASE_URL=... python dev/smoke_openapi_examples.py
+    python3 dev/smoke_openapi_examples.py https://api.imaging.datacommons.cancer.gov
+    SMOKE_BASE_URL=... python3 dev/smoke_openapi_examples.py
 
 Environment:
     SMOKE_BASE_URL    Base URL (if not passed as argv[1]).

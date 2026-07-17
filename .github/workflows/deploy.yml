@@ -189,8 +189,6 @@ jobs:
       - name: Smoke-test OpenAPI examples (REST)
         if: ${{ inputs.target == 'rest' || inputs.target == 'both' }}
         env:
-          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
-          REGION: ${{ vars.REGION || 'us-central1' }}
           # The tier's public URL behind the load balancer (e.g. https://api.imaging.datacommons.cancer.gov).
           # Required: the test deliberately exercises the surface real users hit — the LB /
           # shared-domain URL map is exactly where routing regressions live (the /v3/* glob gotcha,
