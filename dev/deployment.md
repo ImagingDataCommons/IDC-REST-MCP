@@ -139,11 +139,14 @@ python3 dev/smoke_openapi_examples.py "$URL"
 > StudyInstanceUID, a stale example) fails the deploy rather than quietly misleading Swagger-UI
 > users. The example smoke test targets the tier's **`PUBLIC_BASE_URL`** — the public domain behind
 > the load balancer (the surface real users hit; see *Tier URLs — custom domains* and *Shared-domain
-> path routing*), and it first asserts `/v3/version` still comes from Cloud Run (`Server: Google
-> Frontend`) to catch a URL-map/ESP routing regression. If `PUBLIC_BASE_URL` is unset (e.g. before a
-> tier's domain is attached) it falls back to the `*.run.app` URL and warns. Because it runs against
-> real tier data it can go red when IDC re-releases and an example UID is retired; fix the example,
-> or set the `SMOKE_SOFT_FAIL` Environment variable to downgrade that tier to a warning.
+> path routing*), and it first asserts `/v3/version` responds from Cloud Run (`Server: Google
+> Frontend`) to catch a down public URL or a URL-map/ESP routing regression. **`PUBLIC_BASE_URL` is
+> required**: if it is unset, or the public URL isn't serving, the step fails — it does **not** fall
+> back to the `*.run.app` URL, because that would skip exactly the user-facing surface this test
+> exists to cover. (So attach a tier's domain and set `PUBLIC_BASE_URL` before its first CI deploy.)
+> Because it runs against real tier data it can go red when IDC re-releases and an example UID is
+> retired; fix the example, or set the `SMOKE_SOFT_FAIL` Environment variable to downgrade that tier
+> to a warning.
 
 > **Don't use `/healthz` as a health-check path on Cloud Run's default `*.run.app` domain.**
 > Google's front end reserves that exact path and returns its own generic 404 page for it

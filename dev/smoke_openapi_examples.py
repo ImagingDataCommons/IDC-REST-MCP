@@ -167,7 +167,12 @@ def evaluate(status, ctype, chunk, err):
         try:
             parsed = json.loads(chunk.decode("utf-8", "replace"))
         except Exception:
-            return True, f"HTTP {status} (json larger than cap; no leading error envelope)"
+            # A parse failure is only benign when we truncated a large body at the cap; a short
+            # body that won't parse is a real regression (invalid JSON under application/json).
+            if len(chunk) >= MAX_BYTES:
+                return True, f"HTTP {status} (json body exceeded {MAX_BYTES}-byte cap; no leading error envelope)"
+            snippet = chunk[:200].decode("utf-8", "replace")
+            return False, f"HTTP {status} but body is not valid JSON despite application/json: {snippet}"
         if isinstance(parsed, dict) and "error" in parsed:
             return False, f"HTTP {status} but error envelope: {json.dumps(parsed['error'])[:200]}"
     return True, f"HTTP {status}"
