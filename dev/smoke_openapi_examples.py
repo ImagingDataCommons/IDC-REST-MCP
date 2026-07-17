@@ -51,6 +51,12 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _wf_command_escape(message: str) -> str:
+    """Percent-encode a GitHub workflow-command message so an embedded snippet can't break the
+    single-line `::error::` format (or inject further commands). Encode `%` first."""
+    return message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 TIMEOUT = _env_int("SMOKE_TIMEOUT", 30)
 MAX_BYTES = _env_int("SMOKE_MAX_BYTES", 2_000_000)
 SOFT_FAIL = os.environ.get("SMOKE_SOFT_FAIL", "").lower() in {"1", "true", "yes", "on"}
@@ -124,17 +130,12 @@ def build_request(path: str, op: dict, components: dict):
     except KeyError as e:
         return None, f"unfilled path param {e}"
 
-    _, body_found, body_val = body_example(op, components)
+    body_required, body_found, body_val = body_example(op, components)
     body = body_val if body_found else None
-    if op_needs_body(op) and not body_found:
+    if body_required and not body_found:
         return None, "required body has no example"
 
     return (filled_path, query, body), None
-
-
-def op_needs_body(op: dict) -> bool:
-    rb = op.get("requestBody")
-    return bool(rb and rb.get("required"))
 
 
 def probe(method: str, url: str, body):
@@ -225,7 +226,9 @@ def main() -> int:
         print(f"  SKIP  {tag}  ({detail})")
     for tag, detail in failed:
         print(f"  FAIL  {tag}  ({detail})")
-        print(f"::error title=OpenAPI example failed::{tag} — {detail}")
+        # `detail` can contain a response snippet with %, CR, or LF; percent-encode them so the
+        # GitHub workflow command stays one well-formed line (and can't be used to inject others).
+        print(f"::error title=OpenAPI example failed::{_wf_command_escape(f'{tag} — {detail}')}")
 
     print(f"\n{len(passed)} passed, {len(failed)} failed, {len(skipped)} skipped")
     if failed and not SOFT_FAIL:
