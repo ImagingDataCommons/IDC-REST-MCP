@@ -23,6 +23,8 @@ dependencies = [
     # Capped below 2.0: that release removes `mcp.server.fastmcp` entirely (FastMCP ->
     # MCPServer) and moves transport config off the constructor, so the adapter does not
     # import under it. Migration is a deliberate PR, not a dependency bump.
+    # The cap alone does not hold the line — dependabot rewrites it. The matching ignore
+    # condition in .github/dependabot.yml is what actually keeps 2.x out; change both together.
     "mcp>=1.28.1,<2",
 ]
 
