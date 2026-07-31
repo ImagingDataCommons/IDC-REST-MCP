@@ -57,7 +57,7 @@ uv run --directory . pytest tests/test_backend_guards.py -q   # one file
 | [test_clinical.py](../tests/test_clinical.py) | Clinical tables registered under the `clinical` schema, hidden from `list_tables`, discoverable/readable, joinable to `index` |
 
 Fixtures live in [tests/conftest.py](../tests/conftest.py): `ctx` (the core
-`AppContext`), `client` (FastAPI `TestClient`), and `parse_mcp` (normalizes a FastMCP
+`AppContext`), `client` (FastAPI `TestClient`), and `parse_mcp` (normalizes an MCP
 `call_tool` return into plain Python).
 
 ### Continuous integration
@@ -93,7 +93,7 @@ src/idc_api/
       duckdb_backend.py  # read-only DuckDB over idc-index Parquet
     services/            # discovery, cohort, query, clinical, manifest, viewer, citations, licenses
   rest/app.py            # FastAPI app + routes
-  mcp/server.py          # FastMCP tools + resources + entrypoint
+  mcp/server.py          # MCPServer tools + resources + entrypoint
 tests/                   # pytest suite
 ```
 

@@ -70,7 +70,7 @@ async def test_run_sql(server, parse_mcp):
 async def test_run_sql_error_carries_engine_hint(server):
     # A SQL mistake must return DuckDB's self-correction hints (candidate columns,
     # "Did you mean") to the agent — not the guard's generic "Internal error" fallback.
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError) as exc:
         await server.call_tool("run_sql", {"sql": "SELECT no_such_column FROM index"})
@@ -80,7 +80,7 @@ async def test_run_sql_error_carries_engine_hint(server):
 
 
 async def test_error_is_clean(server):
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError) as exc:
         await server.call_tool("get_collection", {"collection_id": "__nope__"})
@@ -90,21 +90,20 @@ async def test_error_is_clean(server):
 def test_server_version_is_our_build_not_sdk_fallback(server):
     """initialize must advertise our package version, not the MCP SDK's own version.
 
-    The low-level server defaults version to None, which makes the handshake echo the `mcp`
-    SDK version — useless for tracking this server. We set it explicitly; guard that wiring
-    (and the private _mcp_server reach-in it depends on) against SDK changes.
+    Left unset, the handshake echoes the `mcp` SDK version — useless for tracking this server.
+    We pass it to the constructor; guard that wiring against SDK changes.
     """
     from importlib.metadata import version
 
     from idc_api.mcp.server import _server_version
 
-    advertised = server._mcp_server.version
+    advertised = server.version
     assert advertised, "serverInfo.version unset → SDK-version fallback"
     assert advertised == _server_version()
     assert advertised.startswith(version("idc-api"))
     assert advertised != version("mcp")
     # the value the initialize handshake actually returns
-    opts = server._mcp_server.create_initialization_options()
+    opts = server._lowlevel_server.create_initialization_options()
     assert opts.server_version == advertised
 
 
@@ -131,7 +130,7 @@ async def test_resources(server):
 
 
 def test_http_app_serves_both_slash_forms_without_redirect():
-    """`/mcp` and `/mcp/` both answer directly. FastMCP alone 307s the trailing-slash form to
+    """`/mcp` and `/mcp/` both answer directly. The SDK alone 307s the trailing-slash form to
     the bare one, which forces clients and proxies to replay the POST body."""
     from fastapi.testclient import TestClient
 
@@ -164,15 +163,13 @@ def test_http_app_serves_both_slash_forms_without_redirect():
 
 @pytest.mark.parametrize("configured", ["/mcp", "/mcp/"])
 def test_http_app_is_slash_agnostic_in_configured_path(configured):
-    """Both spellings are routed whichever one FastMCP was configured with. Only reachable by
-    editing the FastMCP(...) call — FASTMCP_STREAMABLE_HTTP_PATH cannot reach it, since
-    FastMCP.__init__ always passes streamable_http_path= explicitly and that outranks env."""
-    from mcp.server.fastmcp import FastMCP
+    """Both spellings are routed whichever one the endpoint path is configured with."""
+    from mcp.server.mcpserver import MCPServer
     from starlette.routing import Route
 
     from idc_api.mcp.server import http_app
 
-    app = http_app(FastMCP("probe", streamable_http_path=configured))
+    app = http_app(MCPServer("probe"), streamable_http_path=configured)
     paths = {r.path for r in app.router.routes if isinstance(r, Route)}
     assert {"/mcp", "/mcp/"} <= paths
     assert app.router.redirect_slashes is False
