@@ -53,3 +53,10 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Selected explicitly rather than left to ruff's default. Ruff 0.16 expanded that default from
+# 59 rules to 413, so a patch-range bump of the ruff pin silently became a lint policy change
+# and failed CI on unmodified code. Pinning the set keeps `ruff check` reproducible across
+# upgrades; widening it is a deliberate edit here, with the resulting fixes in the same PR.
+select = ["E4", "E7", "E9", "F"]
