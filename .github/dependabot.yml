@@ -16,3 +16,11 @@ updates:
       python:
         patterns:
           - "*"
+    ignore:
+      # The `mcp<2` cap in pyproject.toml does not hold on its own: dependabot rewrites the
+      # constraint it finds (it proposed `mcp>=2.0.0,<3`) rather than staying inside it. Only
+      # an ignore condition keeps 2.x out of the weekly group. SDK 2.0 removes
+      # `mcp.server.fastmcp` entirely, so the adapter does not import under it — the port is a
+      # deliberate PR, not a dependency bump. Drop this entry when that migration lands.
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
