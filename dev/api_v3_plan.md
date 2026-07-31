@@ -218,7 +218,7 @@ general MCP guidance to treat all tool inputs as untrusted and apply defense in 
 ## Tech stack & deployment
 - **Python 3.11+**, **FastAPI** + uvicorn/gunicorn, **Pydantic v2**. FastAPI gives OpenAPI
   docs + generated client SDKs for free (serves the non-Python/web-integration audience).
-- **MCP:** the official `mcp` Python SDK (FastMCP server API). Hand-author tools over
+- **MCP:** the official `mcp` Python SDK (`MCPServer` server API). Hand-author tools over
   `core/` rather than auto-converting REST routes — auto-conversion yields generic,
   poorly-described tools. Same image serves remote MCP (HTTP) next to REST; local MCP runs
   via **stdio** from a `pip install idc-mcp` / `uvx` entrypoint.

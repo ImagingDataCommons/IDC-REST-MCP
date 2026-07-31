@@ -19,11 +19,8 @@ dependencies = [
     # REST adapter
     "fastapi>=0.139.1",
     "uvicorn[standard]>=0.51.0",
-    # MCP adapter (official SDK; bundles FastMCP server API).
-    # Capped below 2.0: that release removes `mcp.server.fastmcp` entirely (FastMCP ->
-    # MCPServer) and moves transport config off the constructor, so the adapter does not
-    # import under it. Migration is a deliberate PR, not a dependency bump.
-    "mcp>=1.28.1,<2",
+    # MCP adapter (official SDK; bundles the MCPServer high-level API)
+    "mcp>=2.0.0",
 ]
 
 [project.optional-dependencies]

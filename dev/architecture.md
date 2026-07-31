@@ -25,7 +25,7 @@ for *how to work in it* see [`dev/developer_guide.md`](developer_guide.md).
             ┌──────────────────────┐        ┌──────────────────────┐
             │   REST adapter        │        │    MCP adapter        │
             │   src/idc_api/rest    │        │    src/idc_api/mcp    │
-            │   FastAPI routes      │        │    FastMCP tools +    │
+            │   FastAPI routes      │        │   MCPServer tools +   │
             │                       │        │    resources          │
             └──────────┬───────────┘        └───────────┬──────────┘
                        │  (thin: validate + delegate)    │
@@ -186,7 +186,7 @@ bytes through the service, and identical behavior local or hosted. (A local-only
 endpoint/tool existed pre-3.0.0 and was removed in beta; see CHANGELOG.)
 
 The hosted HTTP transport is configured **stateless** (`stateless_http=True`,
-`json_response=True` on the `FastMCP(...)` constructor) so each request is self-contained and
+`json_response=True` on the `streamable_http_app(...)` call) so each request is self-contained and
 the service autoscales across instances like the REST API — no sticky sessions. This is safe
 because the server exposes only client-initiated tools + static resources (none of the
 server→client features that require a persistent session). The flags affect only the HTTP
@@ -212,7 +212,7 @@ rationale.
 |---|---|---|
 | Language/runtime | Python 3.11+ (dev on 3.12) | matches idc-index |
 | Web framework | FastAPI + uvicorn | free OpenAPI/Swagger + generated SDKs |
-| MCP | official `mcp` SDK (FastMCP) | hand-authored tools, not auto-converted routes |
+| MCP | official `mcp` SDK (`MCPServer`) | hand-authored tools, not auto-converted routes |
 | Query engine | DuckDB over Parquet | ms latency, no GCP/auth, matches idc-index |
 | Models/validation | Pydantic v2 | one contract for both adapters |
 | Packaging | `uv` + lockfile, hatchling src-layout | reproducible installs |

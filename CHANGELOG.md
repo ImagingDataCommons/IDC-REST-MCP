@@ -13,6 +13,15 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Changed
+
+- The MCP server now requires **MCP SDK 2.0** (`mcp>=2.0.0`). Tools, resources, the `/mcp`
+  endpoint and every response shape are unchanged — this is an SDK-internal rename
+  (`FastMCP` → `MCPServer`). One config surface goes away: the SDK's undocumented
+  `FASTMCP_HOST` / `FASTMCP_PORT` / `FASTMCP_STREAMABLE_HTTP_PATH` environment variables no
+  longer have any effect. Use `idc-mcp --http --host … --port …`, which is what the deployment
+  has always passed; the defaults (`127.0.0.1:8000`) are unchanged.
+
 ### Fixed
 
 - The `/v3/viewer-url` OpenAPI examples (the values Swagger UI's "Try it out" pre-fills) used a StudyInstanceUID and SeriesInstanceUID that are not present in IDC, so running the example returned a `not_found` error instead of a viewer link. Both now use resolvable UIDs.

@@ -581,7 +581,7 @@ autoscales like REST. Caveats:
 
 - **Retrieval is manifests/URLs only** on every transport — the server never transfers files;
   callers download directly from the public S3/GCS buckets (`idc` CLI / s5cmd).
-- **Both `…/mcp` and `…/mcp/` are served directly** — no redirect either way. FastMCP registers one
+- **Both `…/mcp` and `…/mcp/` are served directly** — no redirect either way. The SDK registers one
   exact-path route at `/mcp`, so out of the box Starlette 307s `/mcp/` onto it; `http_app()` in
   [mcp/server.py](../src/idc_api/mcp/server.py) registers the trailing-slash form as a real route
   and turns `redirect_slashes` off, because making an RPC client replay its POST body across a

@@ -25,8 +25,8 @@ import logging
 import time
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -67,7 +67,9 @@ list, and join examples."""
 
 
 # stateless_http=True / json_response=True make the hosted (streamable-http) transport
-# horizontally scalable on Cloud Run.
+# horizontally scalable on Cloud Run. Both are passed to streamable_http_app() in http_app()
+# below — as of MCP SDK 2.0 the transport settings live on that call rather than on the server
+# object, so stdio mode never constructs them at all.
 #
 # Why: MCP's streamable-HTTP transport is normally *session-oriented* — the server keeps each
 # client's session state in the memory of the process that handled `initialize`, and every
@@ -109,25 +111,18 @@ def _server_version() -> str:
     Base is the installed package version; when a deploy sets IDC_API_BUILD (e.g. a short git
     SHA) it is appended as a PEP 440 local segment so the string moves on every redeploy — this
     is how a caller confirms which build a hosted instance is actually running. Without setting
-    `version=`, FastMCP would fall back to the MCP SDK's own version, which says nothing about
-    this server. Shared with the REST adapter (which reports the same string via /v3/version and
+    `version=`, the SDK would fall back to its own version, which says nothing about this
+    server. Shared with the REST adapter (which reports the same string via /v3/version and
     /v3/openapi.json) through core.version.
     """
     return core_version.server_version()
 
 
-mcp = FastMCP(
+mcp = MCPServer(
     "IDC (Imaging Data Commons)",
     instructions=INSTRUCTIONS,
-    stateless_http=True,
-    json_response=True,
-    transport_security=_transport_security(),
+    version=_server_version(),
 )
-# FastMCP doesn't forward a version to the low-level server; left unset, the initialize
-# handshake reports the MCP SDK's own version (meaningless for tracking this server). Set it on
-# the underlying server so serverInfo.version reflects our build. No public accessor exists in
-# this SDK version, hence the _mcp_server reach-in.
-mcp._mcp_server.version = _server_version()
 ctx = AppContext()
 
 
@@ -573,11 +568,11 @@ def schema_resource(table: str) -> str:
 # --- entrypoint ---------------------------------------------------------------------------
 
 
-def http_app(server: FastMCP | None = None) -> Starlette:
+def http_app(server: MCPServer | None = None, streamable_http_path: str = "/mcp") -> Starlette:
     """Starlette app for the hosted (streamable-http) transport.
 
-    Same app FastMCP builds, with one fix: serve the endpoint at both ``/mcp`` and ``/mcp/``
-    rather than redirecting between them. FastMCP registers a single *exact-path* Route at
+    Same app the SDK builds, with one fix: serve the endpoint at both ``/mcp`` and ``/mcp/``
+    rather than redirecting between them. The SDK registers a single *exact-path* Route at
     ``streamable_http_path`` (default ``/mcp``), so Starlette's ``redirect_slashes`` answers a
     request for ``/mcp/`` with a 307 to ``/mcp``. That redirect is correct HTTP but a poor fit
     for an RPC endpoint fronted by a load balancer: it makes every ``/mcp/`` client re-issue its
@@ -586,18 +581,25 @@ def http_app(server: FastMCP | None = None) -> Starlette:
     LB's ``/mcp``, ``/mcp/*`` rule) uses is the path that gets served.
 
     Slash-agnostic in the configured path: whether ``streamable_http_path`` is ``/mcp`` or
-    ``/mcp/``, FastMCP registers whichever spelling it was given and we add the other.
+    ``/mcp/``, the SDK registers whichever spelling it was given and we add the other.
+
+    ``transport_security`` must be passed here explicitly: the SDK enables DNS-rebinding
+    protection by default, which answers every request on a hosted domain with HTTP 421.
     """
     server = server or mcp
-    app = server.streamable_http_app()
-    configured = server.settings.streamable_http_path
+    app = server.streamable_http_app(
+        streamable_http_path=streamable_http_path,
+        stateless_http=True,
+        json_response=True,
+        transport_security=_transport_security(),
+    )
     # "/mcp" and "/mcp/" are the same endpoint; a configured "/" has no distinct twin.
-    base = configured.rstrip("/")
+    base = streamable_http_path.rstrip("/")
     spellings = [base, f"{base}/"] if base else ["/"]
     found = {r.path: r for r in app.router.routes if isinstance(r, Route) and r.path in spellings}
     if not found:
         raise RuntimeError(
-            f"FastMCP registered no route at {configured!r} — the SDK's routing changed and "
+            f"the SDK registered no route at {streamable_http_path!r} — its routing changed and "
             "http_app() can no longer find the endpoint to alias."
         )
     # methods=None on the source Route: the endpoint is an ASGI app, so it matches every method
@@ -624,24 +626,22 @@ def main() -> None:
         action="store_true",
         help="Serve over streamable-http (hosted/shared) instead of stdio (local).",
     )
-    parser.add_argument("--host", default=None)
-    parser.add_argument("--port", type=int, default=None)
+    # Defaults match what the SDK's own settings used to supply; as of MCP SDK 2.0 host/port are
+    # no longer server state, so they live here.
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     if args.http:
         import uvicorn
 
-        if args.host:
-            mcp.settings.host = args.host
-        if args.port:
-            mcp.settings.port = args.port
         # Equivalent to mcp.run(transport="streamable-http"), but serving http_app() so the
         # trailing-slash route above is present. uvicorn's proxy_headers default (with
         # FORWARDED_ALLOW_IPS from the environment) is unchanged.
         uvicorn.run(
             http_app(),
-            host=mcp.settings.host,
-            port=mcp.settings.port,
+            host=args.host,
+            port=args.port,
             log_level=mcp.settings.log_level.lower(),
         )
     else:

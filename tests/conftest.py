@@ -24,11 +24,12 @@ def client():
 
 
 def mcp_json(result) -> object:
-    """Normalize a FastMCP ``call_tool`` return into plain Python (dict/list)."""
-    if isinstance(result, dict):
-        # Structured-output dict; FastMCP wraps bare list/scalar returns under "result".
-        return result.get("result", result)
-    for block in result:  # Sequence[ContentBlock]
+    """Normalize an MCP ``call_tool`` return (``CallToolResult``) into plain Python."""
+    structured = result.structured_content
+    if structured is not None:
+        # The SDK wraps bare list/scalar returns under "result"; dict returns come through as-is.
+        return structured.get("result", structured)
+    for block in result.content:  # Sequence[ContentBlock]
         text = getattr(block, "text", None)
         if text is not None:
             return json.loads(text)
