@@ -148,6 +148,10 @@ class ClinicalTableList(BaseModel):
 
 
 class NumericRange(BaseModel):
+    # Unknown keys are rejected rather than ignored: {"min": 5} would otherwise compile to a
+    # range that constrains nothing (see CohortFilters).
+    model_config = ConfigDict(extra="forbid")
+
     gte: float | str | None = None
     lte: float | str | None = None
 
@@ -158,6 +162,11 @@ class CohortFilters(BaseModel):
     names with ``list_attributes`` and valid values with ``get_attribute_values``."""
 
     model_config = ConfigDict(
+        # An unrecognized key is a hard error, never silently ignored. Ignoring one meant a
+        # mis-shaped body dropped every predicate and returned all of IDC at HTTP 200 — a wrong
+        # answer that looks like a right one. Failing loud beats forward-compatibility for a
+        # request object this small and this consequential.
+        extra="forbid",
         json_schema_extra={
             "examples": [
                 {
@@ -165,7 +174,7 @@ class CohortFilters(BaseModel):
                     "ranges": {},
                 }
             ]
-        }
+        },
     )
 
     terms: dict[str, list[str]] = Field(
@@ -175,12 +184,26 @@ class CohortFilters(BaseModel):
     ranges: dict[str, NumericRange] = Field(default_factory=dict)
 
 
+# Shared by every response built from a filter, so the same two field names mean the same thing
+# everywhere a cohort is described.
+_APPLIED_DESC = (
+    "The filter predicates the server actually applied. Compare it with what you sent: if it is "
+    "empty, nothing was filtered and these numbers cover all of IDC."
+)
+_WARNINGS_DESC = (
+    "Non-fatal problems with the request — above all, filter predicates that were dropped. "
+    "Empty when the request was honored in full."
+)
+
+
 class CohortCounts(BaseModel):
     patients: int
     studies: int
     series: int
     instances: int
     size_TB: float
+    filters_applied: CohortFilters = Field(default_factory=CohortFilters, description=_APPLIED_DESC)
+    warnings: list[str] = Field(default_factory=list, description=_WARNINGS_DESC)
 
 
 class SeriesManifestRow(BaseModel):
@@ -252,7 +275,11 @@ class CitationsResult(BaseModel):
         "In addition to the per-dataset citations, always acknowledge IDC itself by citing "
         "Fedorov et al., https://doi.org/10.1148/rg.230180 (see idc_acknowledgment)."
     )
+    filters_applied: CohortFilters = Field(default_factory=CohortFilters, description=_APPLIED_DESC)
+    warnings: list[str] = Field(default_factory=list, description=_WARNINGS_DESC)
 
 
 class LicensesResult(BaseModel):
     licenses: list[LicenseItem]
+    filters_applied: CohortFilters = Field(default_factory=CohortFilters, description=_APPLIED_DESC)
+    warnings: list[str] = Field(default_factory=list, description=_WARNINGS_DESC)

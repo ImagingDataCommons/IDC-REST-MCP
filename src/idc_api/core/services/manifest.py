@@ -5,7 +5,7 @@ download directly from the public S3/GCS buckets (``idc`` CLI / s5cmd)."""
 from __future__ import annotations
 
 from ..backend.base import QueryBackend
-from ..filters import compile_filters
+from ..filters import compile_filters, require_filter
 from ..models import CohortFilters, DownloadInfo
 
 # GCS is reached via its S3-compatible interop endpoint, so URLs keep the s3:// scheme even
@@ -52,8 +52,9 @@ class ManifestService:
         if source not in ("aws", "gcs"):
             raise ValueError("source must be 'aws' or 'gcs'")
         limit = limit if limit is not None else self.settings.manifest_hard_cap
-        where, params = compile_filters(filters)
-        urls, truncated = self._series_urls(where, params, limit)
+        f = compile_filters(filters)
+        require_filter(f, "list series URLs")
+        urls, truncated = self._series_urls(f.where, f.params, limit)
         if source == "gcs":
             urls = [remap_bucket_for_gcs(u) for u in urls]
         return urls, truncated
@@ -67,8 +68,9 @@ class ManifestService:
     def download_info(
         self, filters: CohortFilters, total_series: int, size_TB: float
     ) -> DownloadInfo:
-        where, params = compile_filters(filters)
-        preview, _ = self._series_urls(where, params, 5)
+        f = compile_filters(filters)
+        require_filter(f, "build a download payload")
+        preview, _ = self._series_urls(f.where, f.params, 5)
         truncated = total_series > self.settings.manifest_hard_cap
 
         commands: list[str] = []

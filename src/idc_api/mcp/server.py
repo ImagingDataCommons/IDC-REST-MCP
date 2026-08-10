@@ -28,13 +28,14 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.routing import Route
 
 from ..core import schema as core_schema
 from ..core import version as core_version
 from ..core.context import AppContext
-from ..core.errors import IDCAPIError
+from ..core.errors import IDCAPIError, InvalidQueryError
 from ..core.models import CohortFilters, NumericRange
 from ..http_headers import HSTSMiddleware
 from ..settings import get_settings
@@ -61,6 +62,8 @@ Work this way:
 3. IDC is large (100+ TB) — always report counts/size_TB and warn before any download. To get
    data, use get_cohort_urls / the returned `idc` commands — direct S3/GCS transfer from public
    buckets, no server involved.
+4. Trust `filters_applied`, not your intent: surface any `warnings` a result carries, and treat
+   an empty `filters_applied` as the whole archive rather than a cohort.
 Cite with get_citations (per-dataset citations plus the IDC paper to acknowledge IDC itself);
 respect get_licenses (CC-BY vs CC-BY-NC). See `idc://guide` for the data model, the full tool
 list, and join examples."""
@@ -204,10 +207,30 @@ def guard(fn):
 
 
 def _filters(terms: dict | None, ranges: dict | None) -> CohortFilters:
-    return CohortFilters(
-        terms=terms or {},
-        ranges={k: NumericRange(**v) for k, v in (ranges or {}).items()},
-    )
+    """Build the core filter object from loose tool arguments.
+
+    The models reject unknown keys (a silently-dropped predicate would return all of IDC as if
+    it were a cohort), so a mis-shaped argument raises here. Convert it to an InvalidQueryError
+    — `guard` turns that into a ToolError stating the expected shape, rather than the opaque
+    "Internal error" any other exception would produce.
+    """
+    try:
+        return CohortFilters(
+            terms=terms or {},
+            ranges={k: NumericRange(**v) for k, v in (ranges or {}).items()},
+        )
+    except ValidationError as exc:
+        raise InvalidQueryError(
+            "Malformed filter arguments: terms is {attribute: [values]} (e.g. "
+            '{"Modality": ["MR"]}) and ranges is {attribute: {"gte": x, "lte": y}}. '
+            f"Details: {exc.error_count()} validation error(s): "
+            + "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())
+        ) from None
+    except TypeError as exc:  # e.g. ranges={"instanceCount": 5} — not a mapping to unpack
+        raise InvalidQueryError(
+            'Malformed filter arguments: ranges is {attribute: {"gte": x, "lte": y}} and terms '
+            f"is {{attribute: [values]}}. Details: {exc}"
+        ) from None
 
 
 # --- discovery ----------------------------------------------------------------------------
@@ -357,7 +380,11 @@ def build_cohort(
     `terms` is {attribute: [values]} for equality/IN (e.g. {"Modality": ["MR"],
     "BodyPartExamined": ["BREAST"]}). `ranges` is {attribute: {"gte": x, "lte": y}} for
     numeric/date ranges. Discover valid attributes with list_attributes and valid values with
-    get_attribute_values. For anything these structured filters can't express, use run_sql."""
+    get_attribute_values. For anything these structured filters can't express, use run_sql.
+
+    At least one filter predicate is required — an unfiltered cohort is the whole 100+ TB archive;
+    use get_stats for archive-wide totals. The result echoes `counts.filters_applied` and
+    `counts.warnings`: check them rather than assuming your filter landed."""
     f = _filters(terms, ranges)
     return ctx.cohort.build_manifest(f, page=page, page_size=page_size).model_dump(mode="json")
 
@@ -403,7 +430,8 @@ def get_cohort_urls(
     ever expects s3:// lines). Returns up to `limit` URLs (increase for full manifests). These
     are anonymous public URLs — easiest is the `idc` CLI (handles either cloud); driving it
     yourself, `s5cmd --no-sign-request` works directly for source=aws, and for source=gcs add
-    `--endpoint-url https://storage.googleapis.com`."""
+    `--endpoint-url https://storage.googleapis.com`. At least one filter predicate is required:
+    unfiltered, this would enumerate every series in IDC."""
     f = _filters(terms, ranges)
     urls, truncated = ctx.manifest.manifest_lines(f, source=source, limit=limit)
     return {
@@ -496,6 +524,14 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
    property you need is not there (e.g. what anatomy a segmentation contains), it likely lives
    in a specialized index — see *Tables for run_sql* below.
 3. *Build:* `build_cohort(terms={...}, ranges={...})` → counts, sample series, download payload.
+   *How to tell your filter was applied:* every filtered result echoes `filters_applied` (the
+   predicates actually used) plus a `warnings` list. Empty `filters_applied` means nothing was
+   filtered and the counts describe the ENTIRE archive — never report that as a cohort. A
+   predicate that constrains nothing (empty value list, range with neither bound) is dropped and
+   named in `warnings`; a malformed filter argument is an error, never an empty filter; and
+   `build_cohort` / `get_cohort_urls` refuse an unfiltered request outright (use `get_stats` for
+   archive-wide totals). Values are case-sensitive, and a zero-count cohort says so when case is
+   the only reason — `Modality=['mr']` returns zeros *plus* a warning that 'MR' exists.
    For complex queries: `list_tables` → `get_table_schema('index')` → `run_sql('SELECT ...')`.
    *Explore narrow, then widen:* keep result sizes small while you're still figuring out the
    query (small `max_rows` / `limit` / `page_size`, or COUNT/GROUP BY instead of raw rows), and
