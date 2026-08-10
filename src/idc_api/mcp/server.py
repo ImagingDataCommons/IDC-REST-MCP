@@ -380,7 +380,11 @@ def build_cohort(
     `terms` is {attribute: [values]} for equality/IN (e.g. {"Modality": ["MR"],
     "BodyPartExamined": ["BREAST"]}). `ranges` is {attribute: {"gte": x, "lte": y}} for
     numeric/date ranges. Discover valid attributes with list_attributes and valid values with
-    get_attribute_values. For anything these structured filters can't express, use run_sql."""
+    get_attribute_values. For anything these structured filters can't express, use run_sql.
+
+    At least one filter predicate is required — an unfiltered cohort is the whole 100+ TB archive;
+    use get_stats for archive-wide totals. The result echoes `counts.filters_applied` and
+    `counts.warnings`: check them rather than assuming your filter landed."""
     f = _filters(terms, ranges)
     return ctx.cohort.build_manifest(f, page=page, page_size=page_size).model_dump(mode="json")
 
@@ -426,7 +430,8 @@ def get_cohort_urls(
     ever expects s3:// lines). Returns up to `limit` URLs (increase for full manifests). These
     are anonymous public URLs — easiest is the `idc` CLI (handles either cloud); driving it
     yourself, `s5cmd --no-sign-request` works directly for source=aws, and for source=gcs add
-    `--endpoint-url https://storage.googleapis.com`."""
+    `--endpoint-url https://storage.googleapis.com`. At least one filter predicate is required:
+    unfiltered, this would enumerate every series in IDC."""
     f = _filters(terms, ranges)
     urls, truncated = ctx.manifest.manifest_lines(f, source=source, limit=limit)
     return {
@@ -523,9 +528,10 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
    predicates actually used) plus a `warnings` list. Empty `filters_applied` means nothing was
    filtered and the counts describe the ENTIRE archive — never report that as a cohort. A
    predicate that constrains nothing (empty value list, range with neither bound) is dropped and
-   named in `warnings`; a malformed filter argument is an error, never an empty filter. Values
-   are case-sensitive, so zero counts with *no* warnings means the filter was applied and matched
-   nothing — re-check the casing with `get_attribute_values`.
+   named in `warnings`; a malformed filter argument is an error, never an empty filter; and
+   `build_cohort` / `get_cohort_urls` refuse an unfiltered request outright (use `get_stats` for
+   archive-wide totals). Values are case-sensitive, and a zero-count cohort says so when case is
+   the only reason — `Modality=['mr']` returns zeros *plus* a warning that 'MR' exists.
    For complex queries: `list_tables` → `get_table_schema('index')` → `run_sql('SELECT ...')`.
    *Explore narrow, then widen:* keep result sizes small while you're still figuring out the
    query (small `max_rows` / `limit` / `page_size`, or COUNT/GROUP BY instead of raw rows), and

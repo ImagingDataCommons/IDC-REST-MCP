@@ -13,22 +13,36 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (beta): `POST /v3/cohort/counts` and `POST /v3/licenses` now take the filter under
+  `filters`**, like every other filter endpoint: `{"filters": {"terms": …}}`. The old bare body
+  (`{"terms": …}`) returns `422` naming the fix. The shapes used to differ per endpoint, which is
+  what made the bug below possible.
+- **Breaking (beta): the series-enumerating surfaces require at least one filter predicate** —
+  `POST /v3/cohort/manifest`, `POST /v3/cohort/manifest.txt`, and the MCP `build_cohort` /
+  `get_cohort_urls`. Unfiltered they returned a download payload for the whole archive; they now
+  return `400`. The aggregate surfaces (`cohort/counts`, `licenses`) still answer an unfiltered
+  filter, with a warning.
+
 ### Added
 
 - Responses built from a cohort filter now carry `filters_applied` (the predicates that reached
-  SQL) and `warnings` (predicates dropped, and whether nothing was filtered): `POST /v3/cohort/counts`,
-  `POST /v3/licenses`, `POST /v3/citations`, the `counts` object in `POST /v3/cohort/manifest`, and
-  the MCP `build_cohort` / `get_licenses` / `get_citations` results. An unfiltered
-  `cohort/manifest` also leads its `download.note` with a warning.
+  SQL) and `warnings` (predicates dropped, whether nothing was filtered, and — when a cohort
+  matches nothing only because of letter case — the casing that does exist): `POST /v3/cohort/counts`,
+  `POST /v3/licenses`, `POST /v3/citations`, the `counts` object in `POST /v3/cohort/manifest`,
+  and the MCP `build_cohort` / `get_licenses` / `get_citations` results.
+- A "Limits" section in the user guide: the per-request caps (SQL timeout and row ceiling,
+  manifest cap, page size, memory) and the fact that there is no per-caller rate limit or `429`.
 
 ### Fixed
 
-- A mis-shaped filter body no longer returns all of IDC at HTTP 200. `cohort/counts` and
-  `licenses` take the filter object directly; `cohort/manifest`, `cohort/manifest.txt` and
-  `citations` take it under `filters`. Sending one where the other was expected silently dropped
-  every predicate; both directions are now `422`, as are unrecognized keys in a filter body
-  (`{"term": …}`, `{"min": …}`) and malformed MCP filter arguments. An explicitly empty filter is
-  still allowed and reported in `warnings`.
+- A mis-shaped filter body no longer returns all of IDC at HTTP 200. Unrecognized keys in a
+  filter body (`{"term": …}`, a range bound misspelled `{"min": …}`) and malformed MCP filter
+  arguments are now errors rather than silently dropped predicates.
+- `POST /v3/citations` / `get_citations` resolve DOIs in batches via DataCite instead of one
+  request each — a cohort spanning every DOI in IDC took 237 serial round-trips, now 5. Any DOI
+  the batch doesn't cover still falls back to a per-DOI resolve, so citations stay complete.
 - The `/v3/viewer-url` OpenAPI examples (the values Swagger UI's "Try it out" pre-fills) used a StudyInstanceUID and SeriesInstanceUID that are not present in IDC, so running the example returned a `not_found` error instead of a viewer link. Both now use resolvable UIDs.
 
 ## [3.0.0b2] — 2026-07-14

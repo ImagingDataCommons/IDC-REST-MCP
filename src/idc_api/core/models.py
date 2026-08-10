@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- discovery ----------------------------------------------------------------------------
 
@@ -182,19 +182,6 @@ class CohortFilters(BaseModel):
         examples=[{"collection_id": ["nlst"], "Modality": ["CT"]}],
     )
     ranges: dict[str, NumericRange] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_wrapped_filter(cls, data: Any) -> Any:
-        """Name the fix for the common shape mistake instead of just "extra inputs not
-        permitted": some endpoints take the filter object under ``filters``, and callers send
-        that shape here too."""
-        if isinstance(data, dict) and "filters" in data:
-            raise ValueError(
-                'this takes the filter object directly, e.g. {"terms": {"collection_id": '
-                '["nlst"]}} — do not wrap it in a "filters" key'
-            )
-        return data
 
 
 # Shared by every response built from a filter, so the same two field names mean the same thing

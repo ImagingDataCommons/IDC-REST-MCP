@@ -5,7 +5,7 @@ download directly from the public S3/GCS buckets (``idc`` CLI / s5cmd)."""
 from __future__ import annotations
 
 from ..backend.base import QueryBackend
-from ..filters import compile_filters
+from ..filters import compile_filters, require_filter
 from ..models import CohortFilters, DownloadInfo
 
 # GCS is reached via its S3-compatible interop endpoint, so URLs keep the s3:// scheme even
@@ -53,6 +53,7 @@ class ManifestService:
             raise ValueError("source must be 'aws' or 'gcs'")
         limit = limit if limit is not None else self.settings.manifest_hard_cap
         f = compile_filters(filters)
+        require_filter(f, "list series URLs")
         urls, truncated = self._series_urls(f.where, f.params, limit)
         if source == "gcs":
             urls = [remap_bucket_for_gcs(u) for u in urls]
@@ -68,6 +69,7 @@ class ManifestService:
         self, filters: CohortFilters, total_series: int, size_TB: float
     ) -> DownloadInfo:
         f = compile_filters(filters)
+        require_filter(f, "build a download payload")
         preview, _ = self._series_urls(f.where, f.params, 5)
         truncated = total_series > self.settings.manifest_hard_cap
 
@@ -87,16 +89,6 @@ class ManifestService:
             "idc download-from-manifest idc_manifest.txt --download-dir ./idc-data"
         )
 
-        # An unfiltered selection reaches its most consequential form right here — a download
-        # payload for the whole archive — so the caveat leads the note the agent reads out.
-        unfiltered = (
-            "WARNING: no filter was applied, so this download payload covers the ENTIRE IDC "
-            "archive (see counts.warnings). Do not run these commands unless that is what you "
-            "meant. "
-            if not (f.applied.terms or f.applied.ranges)
-            else ""
-        )
-
         return DownloadInfo(
             total_series=total_series,
             size_TB=size_TB,
@@ -104,8 +96,7 @@ class ManifestService:
             manifest_preview=preview,
             manifest_truncated=truncated,
             note=(
-                unfiltered
-                + "URLs point to public AWS S3 (and GCS) buckets; no credentials needed. Easiest: "
+                "URLs point to public AWS S3 (and GCS) buckets; no credentials needed. Easiest: "
                 "the `idc` CLI commands above (`pip install idc-index`; handles either cloud). "
                 "Driving it yourself: "
                 "`s5cmd --no-sign-request` against these s3:// URLs for AWS; for GCS, request "

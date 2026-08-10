@@ -117,11 +117,12 @@ from S3/GCS; see [§4](#4-getting-the-data)) — and **be a good citizen** — c
 > **Knowing your filter was applied.** Every filtered response echoes `filters_applied` — the
 > predicates the server actually used — alongside a `warnings` list. Empty `filters_applied`
 > means *nothing* was filtered and the counts cover the entire archive; `warnings` says so in
-> words. A mis-shaped filter body is a `422`, never a silently unfiltered `200`, and a predicate
-> that can't constrain anything (an empty value list, a range with neither bound) is dropped and
-> named in `warnings`. Values match **case-sensitively**, so zero counts with an *empty*
-> `warnings` list mean the filter was applied and genuinely matched nothing — re-check the value's
-> casing with `get_attribute_values` / `GET /v3/attributes/{attr}/values`.
+> words. A mis-shaped filter body is a `422`, never a silently unfiltered `200`; a predicate that
+> can't constrain anything (an empty value list, a range with neither bound) is dropped and named
+> in `warnings`; and the surfaces that *enumerate* series (`cohort/manifest`,
+> `cohort/manifest.txt`, `build_cohort`, `get_cohort_urls`) refuse an unfiltered request outright.
+> Values match **case-sensitively**, and a cohort that matches nothing tells you when case is the
+> only reason — `Modality: ["mr"]` comes back with zero counts *and* a warning that `MR` exists.
 >
 > **Knowing you got it all.** Size-capped responses include a `truncated` boolean:
 > `truncated: false` means the result is complete; `true` means raise the limit and re-check (or
@@ -248,19 +249,26 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /v3/docs
 | `POST /v3/citations` | Citations for a cohort |
 | `POST /v3/licenses` | License breakdown for a cohort |
 
-### Filter body shapes
+### Filter bodies: one shape
 
-The filter-taking endpoints come in two shapes. Sending one where the other is expected is a
-`422` naming the shape to use — it is never accepted as an empty filter:
+**Every** filter-taking endpoint — `cohort/counts`, `cohort/manifest`, `cohort/manifest.txt`,
+`citations`, `licenses` — takes the filter object under `filters`, alongside that endpoint's own
+options:
 
-| Body shape | Endpoints |
-|---|---|
-| The filter object directly: `{"terms": …, "ranges": …}` | `cohort/counts`, `licenses` |
-| The filter wrapped: `{"filters": {…}, …}` | `cohort/manifest`, `cohort/manifest.txt`, `citations` |
+```json
+{"filters": {"terms": {"collection_id": ["nlst"]}, "ranges": {"instanceCount": {"gte": 100}}}}
+```
 
-Unrecognized keys anywhere in a filter body are rejected too (`{"term": …}`, `{"gte"` misspelled
-as `{"min"`), because an ignored key is a dropped predicate. Each response reports what was
-actually applied — see *Knowing your filter was applied* in [§1](#recommended-workflow).
+Sending the filter bare (`{"terms": …}` at the top level) is a `422` naming the fix, and so is any
+unrecognized key inside a filter body (`{"term": …}`, a range bound misspelled `{"min": …}`) —
+an ignored key is a dropped predicate, and a dropped predicate silently widens the selection to
+the whole archive. Each response reports what was actually applied; see *Knowing your filter was
+applied* in [§1](#recommended-workflow).
+
+An empty filter is answered by the aggregate endpoints (`cohort/counts`, `licenses`) with a
+warning — "how big is IDC" is a legitimate question. The endpoints that *enumerate series*
+(`cohort/manifest`, `cohort/manifest.txt`) refuse it with a `400`: an unfiltered manifest is a
+download payload for 100+ TB.
 
 ### Worked examples
 
@@ -289,15 +297,15 @@ curl -s localhost:8000/v3/clinical/tables/nlst_canc                     # clinic
 curl -s 'localhost:8000/v3/clinical/tables/nlst_canc/rows?max_rows=100' # clinical rows (capped)
 ```
 
-**Cheap size check** — the `counts` body is the filter object directly:
+**Cheap size check** — the filter goes under `filters`, as it does on every filter endpoint:
 
 ```bash
 curl -s localhost:8000/v3/cohort/counts \
   -H 'content-type: application/json' \
-  -d '{"terms": {"Modality": ["MR"], "BodyPartExamined": ["BREAST"]}}'
+  -d '{"filters": {"terms": {"Modality": ["MR"], "BodyPartExamined": ["BREAST"]}}}'
 ```
 
-**Build a cohort** — `manifest` wraps the filter in a request with paging:
+**Build a cohort** — `manifest` adds paging to the same filter body:
 
 ```bash
 curl -s localhost:8000/v3/cohort/manifest \
@@ -325,15 +333,15 @@ curl -s localhost:8000/v3/sql \
   -d '{"sql": "SELECT Modality, count(*) n FROM index GROUP BY 1 ORDER BY n DESC", "max_rows": 20}'
 ```
 
-**License check** — like `counts`, the body is the filter object directly:
+**License check:**
 
 ```bash
 curl -s localhost:8000/v3/licenses \
   -H 'content-type: application/json' \
-  -d '{"terms": {"collection_id": ["nlst"]}}'
+  -d '{"filters": {"terms": {"collection_id": ["nlst"]}}}'
 ```
 
-**Citations for a cohort** — body wraps the filter, like `manifest`:
+**Citations for a cohort:**
 
 ```bash
 curl -s localhost:8000/v3/citations \
@@ -469,6 +477,28 @@ configuration locked), and only single read-only `SELECT`/`WITH` statements are 
 Values interpolated into curated (non-SQL) queries are always passed as bound parameters
 ([OWASP](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)).
 See [`dev/api_v3_plan.md`](../dev/api_v3_plan.md) for the full threat model.
+
+### Limits
+
+The public deployment is unauthenticated and needs no API key, and there is **no per-caller rate
+limit or quota** — nothing to budget against, and no `429`. What *is* bounded is each individual
+request:
+
+| Limit | Default | Applies to |
+|---|---|---|
+| SQL statement timeout | 30 s | `POST /v3/sql`, `run_sql` |
+| SQL rows returned | 5 000, hard ceiling 10 000 | `POST /v3/sql`, `run_sql` (`truncated` flags it) |
+| Manifest series enumerated | 100 000 | `cohort/manifest*`, `get_cohort_urls` |
+| Page size | 5 000 | `cohort/manifest` |
+| Query memory | 4 GB | every query |
+| At least one filter predicate | required | the series-enumerating endpoints (see above) |
+
+All of these are configurable per deployment ([§7](#7-configuration)). Beyond them, a burst is
+absorbed by Cloud Run autoscaling and surfaces as slower responses or a `503` — back off and
+retry rather than treating it as a permanent failure. Please keep automated use reasonable; if
+you need sustained heavy access, query the [`idc-index`](https://github.com/ImagingDataCommons/idc-index)
+Parquet or IDC's BigQuery tables directly instead of driving this API hard, and note that data
+transfer never goes through this server anyway ([§4](#4-getting-the-data)).
 
 ---
 

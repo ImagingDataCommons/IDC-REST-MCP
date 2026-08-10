@@ -61,17 +61,20 @@ def _format_sql(sql: str, settings) -> str:
 # --- request bodies (response models are the shared core models) --------------------------
 
 
-class _WrappedFilterRequest(BaseModel):
-    """Base for the bodies that carry the filter object under ``filters``.
+class _FilterRequest(BaseModel):
+    """Base for every body that carries a cohort filter.
 
-    Two endpoints (`/cohort/counts`, `/licenses`) take a bare `CohortFilters`; these take it
-    wrapped. Sending one shape to the other used to validate cleanly, drop every predicate and
-    return all of IDC at HTTP 200, so both directions are now hard errors: ``extra="forbid"``
-    rejects the stray keys generically, and the check below names the fix for the mistake
-    callers actually make. The mirror-image check lives on ``CohortFilters`` itself.
+    **One shape for all of them**: the filter object always lives under ``filters``, so nothing
+    depends on remembering which endpoint takes it bare. It used to vary — counts/licenses bare,
+    manifest/citations wrapped — and sending one shape where the other was expected validated
+    cleanly, dropped every predicate, and answered with all of IDC at HTTP 200. Now the shape is
+    uniform and both mistakes are loud: ``extra="forbid"`` rejects stray keys generically, and
+    the check below names the fix for the one callers actually make.
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    filters: CohortFilters = Field(default_factory=CohortFilters)
 
     @model_validator(mode="before")
     @classmethod
@@ -80,14 +83,111 @@ class _WrappedFilterRequest(BaseModel):
             stray = [k for k in ("terms", "ranges") if k in data]
             if stray:
                 raise ValueError(
-                    "this endpoint takes the filter object under `filters`, e.g. "
+                    "the filter object goes under `filters`, e.g. "
                     '{"filters": {"terms": {"collection_id": ["nlst"]}}} — got top-level '
                     f"{', '.join(repr(k) for k in stray)}"
                 )
         return data
 
 
-class ManifestRequest(_WrappedFilterRequest):
+def _filter_errors(*, requires_filter: bool = False) -> dict:
+    """OpenAPI error documentation shared by the filter-taking endpoints.
+
+    How a filter *fails* is part of this API's contract — it is refused, never silently widened
+    to the whole archive — so Swagger UI and any agent reading the schema see the failures spelled
+    out, not just the happy path.
+    """
+    bad_request = {
+        "unknown attribute": {
+            "summary": "Attribute is not filterable (check GET /v3/attributes)",
+            "value": {
+                "error": {
+                    "code": "invalid_query",
+                    "message": "Unknown or non-term filter attribute: 'Modaliti'. Use "
+                    "list_attributes to see valid attributes.",
+                }
+            },
+        }
+    }
+    if requires_filter:
+        bad_request["no filter predicate"] = {
+            "summary": "Refused: unfiltered, this would enumerate every series in IDC",
+            "value": {
+                "error": {
+                    "code": "invalid_query",
+                    "message": "At least one filter predicate is required to build a manifest: "
+                    "unfiltered, that is every series in IDC (100+ TB). Use the stats surface for "
+                    "archive-wide totals, or cohort counts to size a filter first.",
+                }
+            },
+        }
+    return {
+        400: {
+            "description": "Filter could not be applied as given."
+            + (" Includes an unfiltered request, which is refused." if requires_filter else ""),
+            "content": {"application/json": {"examples": bad_request}},
+        },
+        422: {
+            "description": "Malformed body. Unrecognized keys are rejected rather than ignored, "
+            "because an ignored key is a dropped predicate — which would silently widen the "
+            "selection to all of IDC.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "filter not under `filters`": {
+                            "summary": "The filter object goes under `filters`",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body"],
+                                        "msg": "Value error, the filter object goes under "
+                                        '`filters`, e.g. {"filters": {"terms": {"collection_id": '
+                                        "[\"nlst\"]}}} — got top-level 'terms'",
+                                    }
+                                ]
+                            },
+                        },
+                        "misspelled key": {
+                            "summary": "`min` is not a range bound (`gte` / `lte` are)",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "extra_forbidden",
+                                        "loc": [
+                                            "body",
+                                            "filters",
+                                            "ranges",
+                                            "instanceCount",
+                                            "min",
+                                        ],
+                                        "msg": "Extra inputs are not permitted",
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        },
+    }
+
+
+class CountsRequest(_FilterRequest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"filters": {"terms": {"collection_id": ["nlst"], "Modality": ["CT"]}}}]
+        }
+    )
+
+
+class LicensesRequest(_FilterRequest):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"filters": {"terms": {"collection_id": ["nlst"]}}}]}
+    )
+
+
+class ManifestRequest(_FilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -101,13 +201,12 @@ class ManifestRequest(_WrappedFilterRequest):
         }
     )
 
-    filters: CohortFilters = Field(default_factory=CohortFilters)
     page: int = 0
     page_size: int | None = None
     include_rows: bool = True
 
 
-class ManifestTextRequest(_WrappedFilterRequest):
+class ManifestTextRequest(_FilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -116,7 +215,6 @@ class ManifestTextRequest(_WrappedFilterRequest):
         }
     )
 
-    filters: CohortFilters = Field(default_factory=CohortFilters)
     source: str = "aws"
     limit: int | None = None
 
@@ -137,7 +235,7 @@ class SqlRequest(BaseModel):
     max_rows: int | None = None
 
 
-class CitationsRequest(_WrappedFilterRequest):
+class CitationsRequest(_FilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -146,7 +244,6 @@ class CitationsRequest(_WrappedFilterRequest):
         }
     )
 
-    filters: CohortFilters = Field(default_factory=CohortFilters)
     citation_format: str = "apa"
 
 
@@ -474,20 +571,27 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=CohortCounts,
         tags=["cohort"],
         summary="Cohort counts",
+        responses=_filter_errors(),
     )
-    def cohort_counts(filters: CohortFilters):
+    def cohort_counts(req: CountsRequest):
         """Return distinct counts for a filtered cohort — patients, studies, series, instances,
         and total `size_TB` — without the sample rows or download payload. Use it as a fast size
-        check before building a full manifest or downloading. `terms` is `{attribute: [values]}`
-        for equality/IN; `ranges` is `{attribute: {"gte": x, "lte": y}}` for numeric or date
-        ranges."""
-        return C().cohort.counts(filters)
+        check before building a full manifest or downloading. `filters.terms` is
+        `{attribute: [values]}` for equality/IN; `filters.ranges` is
+        `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges.
+
+        The response echoes `filters_applied` (the predicates actually used) and `warnings`.
+        **Check them rather than assuming your filter landed**: an empty `filters_applied` means
+        nothing was filtered and these counts describe all of IDC. An empty filter is allowed
+        here — it is how you ask how big the archive is — and reported in `warnings`."""
+        return C().cohort.counts(req.filters)
 
     @app.post(
         f"{API_PREFIX}/cohort/manifest",
         response_model=ManifestResponse,
         tags=["cohort"],
         summary="Build cohort manifest",
+        responses=_filter_errors(requires_filter=True),
     )
     def cohort_manifest(req: ManifestRequest):
         """Build a cohort from structured filters and get back distinct counts (patients,
@@ -496,7 +600,11 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         equality/IN (e.g. `{"Modality": ["MR"]}`); `filters.ranges` is
         `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges. Discover valid attributes
         via `/attributes` and valid values via `/attributes/{attribute}/values`. For anything
-        these structured filters can't express, use `/sql`."""
+        these structured filters can't express, use `/sql`.
+
+        **At least one filter predicate is required** — unfiltered, this is a download payload for
+        the entire archive; use `/stats` for archive-wide totals. `counts.filters_applied` echoes
+        the predicates actually used."""
         return C().cohort.build_manifest(
             req.filters, page=req.page, page_size=req.page_size, include_rows=req.include_rows
         )
@@ -505,6 +613,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         f"{API_PREFIX}/cohort/manifest.txt",
         tags=["cohort"],
         summary="Cohort manifest (plain text)",
+        responses=_filter_errors(requires_filter=True),
     )
     def cohort_manifest_text(req: ManifestTextRequest):
         """Return a plain-text manifest of public download URLs (one `s3://` per series,
@@ -513,7 +622,11 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         reached via its S3-compatible endpoint, matching idc-index). These are anonymous public
         URLs — feed the file to the `idc` CLI, or `s5cmd --no-sign-request` directly for
         `source=aws` (add `--endpoint-url https://storage.googleapis.com` for `source=gcs`). The
-        response is `text/plain`, one URL per line."""
+        response is `text/plain`, one URL per line.
+
+        **At least one filter predicate is required**: unfiltered, this enumerates every series in
+        IDC. Being plain text, this response carries no `filters_applied` echo — use
+        `/cohort/counts` first to confirm the filter and the size."""
         text = C().manifest.manifest_text(req.filters, source=req.source, limit=req.limit)
         return PlainTextResponse(text)
 
@@ -571,13 +684,16 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=CitationsResult,
         tags=["tools"],
         summary="Cohort citations",
+        responses=_filter_errors(),
     )
     def citations(req: CitationsRequest):
         """Return the publications to cite for a cohort: per-dataset citations (from the cohort's
         source DOIs) in `citations`, plus the IDC paper in `idc_acknowledgment`.
         `citation_format` is one of `apa`, `bibtex`, `csl-json`, `turtle`. When publishing
         results that use IDC data, include the per-dataset citations and acknowledge IDC itself
-        (see the `recommendation` field)."""
+        (see the `recommendation` field). `filters_applied` echoes the cohort these citations are
+        for. Broad cohorts span many DOIs and take proportionally longer to resolve, so filter to
+        the data you actually used."""
         return C().citations.get_citations(req.filters, citation_format=req.citation_format)
 
     @app.post(
@@ -585,12 +701,14 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         response_model=LicensesResult,
         tags=["tools"],
         summary="Cohort license breakdown",
+        responses=_filter_errors(),
     )
-    def licenses(filters: CohortFilters):
+    def licenses(req: LicensesRequest):
         """Return the license breakdown (series count and size per license) for a cohort. Use it
         to check whether the data is commercial-friendly (CC BY) or non-commercial only
-        (CC BY-NC) before reuse."""
-        return C().licenses.get_licenses(filters)
+        (CC BY-NC) before reuse. `filters_applied` echoes the predicates actually used — an empty
+        one means this is the license breakdown of all of IDC, not of your cohort."""
+        return C().licenses.get_licenses(req.filters)
 
     return app
 

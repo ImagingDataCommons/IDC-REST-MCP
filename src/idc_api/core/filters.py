@@ -94,3 +94,22 @@ def compile_filters(filters: CohortFilters) -> CompiledFilters:
         applied=CohortFilters(terms=applied_terms, ranges=applied_ranges),
         warnings=warnings,
     )
+
+
+def require_filter(compiled: CompiledFilters, action: str) -> None:
+    """Refuse ``action`` when no predicate survived compilation.
+
+    The aggregate surfaces (counts, licenses) answer an unfiltered filter honestly — "how big is
+    IDC" is a real question, and it costs one query. The surfaces that enumerate *per series* do
+    not: an unfiltered manifest is a download payload for the whole archive, which no caller
+    means to ask for. Those raise instead, with the dropped-predicate warnings attached so the
+    caller can see *why* their filter came out empty.
+    """
+    if compiled.applied.terms or compiled.applied.ranges:
+        return
+    dropped = [w for w in compiled.warnings if w != UNFILTERED_WARNING]
+    raise InvalidQueryError(
+        f"At least one filter predicate is required to {action}: unfiltered, that is every series "
+        "in IDC (100+ TB). Use the stats surface for archive-wide totals, or cohort counts to "
+        "size a filter first." + ("".join(f" {w}" for w in dropped))
+    )

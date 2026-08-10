@@ -4,7 +4,7 @@ download payload, without any SQL string surgery."""
 from __future__ import annotations
 
 from ..backend.base import QueryBackend
-from ..filters import compile_filters
+from ..filters import compile_filters, require_filter
 from ..models import (
     CohortCounts,
     CohortFilters,
@@ -47,6 +47,9 @@ class CohortService:
             f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {f.where}",
             params=f.params,
         ).rows[0]
+        warnings = list(f.warnings)
+        if row["series"] == 0:
+            warnings.extend(self._casing_hints(f.applied))
         return CohortCounts(
             patients=row["patients"],
             studies=row["studies"],
@@ -56,8 +59,33 @@ class CohortService:
             # Echo the effective filter so a caller can tell an empty cohort apart from a
             # dropped filter without guessing from the magnitude of the numbers.
             filters_applied=f.applied,
-            warnings=f.warnings,
+            warnings=warnings,
         )
+
+    def _casing_hints(self, applied: CohortFilters) -> list[str]:
+        """Explain a zero-row cohort when the only thing wrong was letter case.
+
+        Values are matched exactly, so `Modality=['mr']` counts zero the same way a genuinely
+        empty cohort does. Only reached when nothing matched, so the extra probe — one query per
+        term attribute — never costs anything on a query that worked.
+        """
+        hints: list[str] = []
+        for attr, values in applied.terms.items():
+            # `attr` came through compile_filters, so it is already allow-listed; quote it the
+            # same way and bind the values.
+            placeholders = ", ".join(["?"] * len(values))
+            rows = self.backend.query(
+                f'SELECT DISTINCT "{attr}" v FROM index '  # nosec B608
+                f'WHERE lower(CAST("{attr}" AS VARCHAR)) IN ({placeholders}) LIMIT 5',
+                params=[v.lower() for v in values],
+            ).rows
+            actual = sorted({r["v"] for r in rows if r["v"] is not None and r["v"] not in values})
+            if actual:
+                hints.append(
+                    f"No series matched {attr}={values}, but {actual} exists — values are matched "
+                    "case-sensitively. Use the attribute-values surface to get the exact casing."
+                )
+        return hints
 
     def build_manifest(
         self,
@@ -70,8 +98,11 @@ class CohortService:
         page_size = page_size if page_size is not None else self.settings.default_page_size
         page_size = max(1, min(int(page_size), self.settings.max_page_size))
 
-        counts = self.counts(filters)
         f = compile_filters(filters)
+        # Checked before the counting scan, not after: a manifest of the whole archive is never
+        # what a caller meant, so refuse it rather than pay for it.
+        require_filter(f, "build a manifest")
+        counts = self.counts(filters)
 
         series: list[SeriesManifestRow] = []
         if include_rows:

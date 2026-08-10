@@ -30,15 +30,20 @@ async def test_version_parity(ctx, client, parse_mcp):
 async def test_counts_parity(ctx, client, parse_mcp):
     core_series = ctx.cohort.counts(CohortFilters(terms=_TERMS)).series
 
-    rest_series = client.post("/v3/cohort/counts", json={"terms": _TERMS}).json()["series"]
+    rest_series = client.post("/v3/cohort/counts", json={"filters": {"terms": _TERMS}}).json()[
+        "series"
+    ]
 
     mcp_series = parse_mcp(await mcp.call_tool("build_cohort", {"terms": _TERMS}))["total_series"]
 
     assert core_series == rest_series == mcp_series > 0
 
 
-def _fake_doi_get(url, headers=None, timeout=None):
-    """Stub DOI content negotiation so citation tests don't touch the network."""
+def _fake_doi_get(url, headers=None, timeout=None, params=None):
+    """Stub DOI resolution so citation tests don't touch the network. Accepts `params` because
+    the service tries DataCite's batch endpoint first; the reply carries no DOI, so every entry
+    falls back to the per-DOI path — which is what keeps this a parity test and not a batch one
+    (see tests/test_citations.py)."""
 
     class _Resp:
         status_code = 200
