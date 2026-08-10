@@ -37,15 +37,15 @@ class CohortService:
         self.manifest = ManifestService(backend, settings)
 
     def counts(self, filters: CohortFilters) -> CohortCounts:
-        where, params = compile_filters(filters)
-        # `where` is compile_filters output: allow-listed columns, values bound below.
+        f = compile_filters(filters)
+        # `f.where` is compile_filters output: allow-listed columns, values bound below.
         row = self.backend.query(
             f"SELECT count(DISTINCT PatientID) patients, "  # nosec B608
             f"count(DISTINCT StudyInstanceUID) studies, "
             f"count(DISTINCT SeriesInstanceUID) series, "
             f"COALESCE(sum(instanceCount),0) instances, "
-            f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {where}",
-            params,
+            f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {f.where}",
+            params=f.params,
         ).rows[0]
         return CohortCounts(
             patients=row["patients"],
@@ -53,6 +53,10 @@ class CohortService:
             series=row["series"],
             instances=int(row["instances"]),
             size_TB=round(row["size_mb"] / _MB_PER_TB, 3),
+            # Echo the effective filter so a caller can tell an empty cohort apart from a
+            # dropped filter without guessing from the magnitude of the numbers.
+            filters_applied=f.applied,
+            warnings=f.warnings,
         )
 
     def build_manifest(
@@ -67,18 +71,18 @@ class CohortService:
         page_size = max(1, min(int(page_size), self.settings.max_page_size))
 
         counts = self.counts(filters)
-        where, params = compile_filters(filters)
+        f = compile_filters(filters)
 
         series: list[SeriesManifestRow] = []
         if include_rows:
             cols = ", ".join(f'"{c}"' for c in _ROW_COLUMNS)
-            # `cols` is a fixed constant list (_ROW_COLUMNS); `where` is compile_filters output
+            # `cols` is a fixed constant list (_ROW_COLUMNS); `f.where` is compile_filters output
             # (allow-listed columns, values bound below); page/page_size are clamped ints.
             rows = self.backend.query(
-                f"SELECT {cols} FROM index WHERE {where} "  # nosec B608
+                f"SELECT {cols} FROM index WHERE {f.where} "  # nosec B608
                 f"ORDER BY collection_id, PatientID, StudyInstanceUID, SeriesInstanceUID "
                 f"LIMIT {page_size} OFFSET {page * page_size}",
-                params,
+                params=f.params,
             ).rows
             series = [SeriesManifestRow(**r) for r in rows]
 

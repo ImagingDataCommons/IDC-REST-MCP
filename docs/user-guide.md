@@ -114,6 +114,15 @@ from S3/GCS; see [§4](#4-getting-the-data)) — and **be a good citizen** — c
 > default and flags truncation, so a peek stays cheap; large unfiltered results mostly just waste
 > the agent's context.
 >
+> **Knowing your filter was applied.** Every filtered response echoes `filters_applied` — the
+> predicates the server actually used — alongside a `warnings` list. Empty `filters_applied`
+> means *nothing* was filtered and the counts cover the entire archive; `warnings` says so in
+> words. A mis-shaped filter body is a `422`, never a silently unfiltered `200`, and a predicate
+> that can't constrain anything (an empty value list, a range with neither bound) is dropped and
+> named in `warnings`. Values match **case-sensitively**, so zero counts with an *empty*
+> `warnings` list mean the filter was applied and genuinely matched nothing — re-check the value's
+> casing with `get_attribute_values` / `GET /v3/attributes/{attr}/values`.
+>
 > **Knowing you got it all.** Size-capped responses include a `truncated` boolean:
 > `truncated: false` means the result is complete; `true` means raise the limit and re-check (or
 > narrow/aggregate). `run_sql`'s `max_rows` is clamped to a server ceiling (`SQL_MAX_ROWS_CAP`),
@@ -238,6 +247,20 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /v3/docs
 | `GET /v3/viewer-url` | OHIF/SLIM viewer link for a study/series |
 | `POST /v3/citations` | Citations for a cohort |
 | `POST /v3/licenses` | License breakdown for a cohort |
+
+### Filter body shapes
+
+The filter-taking endpoints come in two shapes. Sending one where the other is expected is a
+`422` naming the shape to use — it is never accepted as an empty filter:
+
+| Body shape | Endpoints |
+|---|---|
+| The filter object directly: `{"terms": …, "ranges": …}` | `cohort/counts`, `licenses` |
+| The filter wrapped: `{"filters": {…}, …}` | `cohort/manifest`, `cohort/manifest.txt`, `citations` |
+
+Unrecognized keys anywhere in a filter body are rejected too (`{"term": …}`, `{"gte"` misspelled
+as `{"min"`), because an ignored key is a dropped predicate. Each response reports what was
+actually applied — see *Knowing your filter was applied* in [§1](#recommended-workflow).
 
 ### Worked examples
 

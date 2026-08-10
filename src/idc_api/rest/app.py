@@ -11,11 +11,12 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..core.context import AppContext, get_context
 from ..core.errors import IDCAPIError
@@ -60,7 +61,33 @@ def _format_sql(sql: str, settings) -> str:
 # --- request bodies (response models are the shared core models) --------------------------
 
 
-class ManifestRequest(BaseModel):
+class _WrappedFilterRequest(BaseModel):
+    """Base for the bodies that carry the filter object under ``filters``.
+
+    Two endpoints (`/cohort/counts`, `/licenses`) take a bare `CohortFilters`; these take it
+    wrapped. Sending one shape to the other used to validate cleanly, drop every predicate and
+    return all of IDC at HTTP 200, so both directions are now hard errors: ``extra="forbid"``
+    rejects the stray keys generically, and the check below names the fix for the mistake
+    callers actually make. The mirror-image check lives on ``CohortFilters`` itself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_bare_filter(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            stray = [k for k in ("terms", "ranges") if k in data]
+            if stray:
+                raise ValueError(
+                    "this endpoint takes the filter object under `filters`, e.g. "
+                    '{"filters": {"terms": {"collection_id": ["nlst"]}}} — got top-level '
+                    f"{', '.join(repr(k) for k in stray)}"
+                )
+        return data
+
+
+class ManifestRequest(_WrappedFilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -80,7 +107,7 @@ class ManifestRequest(BaseModel):
     include_rows: bool = True
 
 
-class ManifestTextRequest(BaseModel):
+class ManifestTextRequest(_WrappedFilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -110,7 +137,7 @@ class SqlRequest(BaseModel):
     max_rows: int | None = None
 
 
-class CitationsRequest(BaseModel):
+class CitationsRequest(_WrappedFilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [

@@ -14,13 +14,13 @@ class LicenseService:
         self.backend = backend
 
     def get_licenses(self, filters: CohortFilters) -> LicensesResult:
-        where, params = compile_filters(filters)
-        # `where` is compile_filters output: allow-listed columns, values bound below.
+        f = compile_filters(filters)
+        # `f.where` is compile_filters output: allow-listed columns, values bound below.
         rows = self.backend.query(
             f"SELECT license_short_name, count(DISTINCT SeriesInstanceUID) series, "  # nosec B608
-            f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {where} "
+            f"COALESCE(sum(series_size_MB),0) size_mb FROM index WHERE {f.where} "
             f"GROUP BY 1 ORDER BY series DESC",
-            params,
+            params=f.params,
         ).rows
         return LicensesResult(
             licenses=[
@@ -30,5 +30,7 @@ class LicenseService:
                     size_TB=round(r["size_mb"] / _MB_PER_TB, 3),
                 )
                 for r in rows
-            ]
+            ],
+            filters_applied=f.applied,
+            warnings=f.warnings,
         )

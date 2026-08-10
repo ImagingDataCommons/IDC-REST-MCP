@@ -13,8 +13,22 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Added
+
+- Responses built from a cohort filter now carry `filters_applied` (the predicates that reached
+  SQL) and `warnings` (predicates dropped, and whether nothing was filtered): `POST /v3/cohort/counts`,
+  `POST /v3/licenses`, `POST /v3/citations`, the `counts` object in `POST /v3/cohort/manifest`, and
+  the MCP `build_cohort` / `get_licenses` / `get_citations` results. An unfiltered
+  `cohort/manifest` also leads its `download.note` with a warning.
+
 ### Fixed
 
+- A mis-shaped filter body no longer returns all of IDC at HTTP 200. `cohort/counts` and
+  `licenses` take the filter object directly; `cohort/manifest`, `cohort/manifest.txt` and
+  `citations` take it under `filters`. Sending one where the other was expected silently dropped
+  every predicate; both directions are now `422`, as are unrecognized keys in a filter body
+  (`{"term": …}`, `{"min": …}`) and malformed MCP filter arguments. An explicitly empty filter is
+  still allowed and reported in `warnings`.
 - The `/v3/viewer-url` OpenAPI examples (the values Swagger UI's "Try it out" pre-fills) used a StudyInstanceUID and SeriesInstanceUID that are not present in IDC, so running the example returned a `not_found` error instead of a viewer link. Both now use resolvable UIDs.
 
 ## [3.0.0b2] — 2026-07-14

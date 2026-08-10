@@ -41,14 +41,14 @@ class CitationsService:
             )
         accept = CITATION_FORMATS[fmt]
 
-        where, params = compile_filters(filters)
+        f = compile_filters(filters)
         dataset_dois = [
             r["source_DOI"]
             for r in self.backend.query(
-                # `where` is compile_filters output: allow-listed columns, values bound below.
-                f"SELECT DISTINCT source_DOI FROM index WHERE {where} "  # nosec B608
+                # `f.where` is compile_filters output: allow-listed columns, values bound below.
+                f"SELECT DISTINCT source_DOI FROM index WHERE {f.where} "  # nosec B608
                 f"AND source_DOI IS NOT NULL AND source_DOI <> ''",
-                params,
+                params=f.params,
             ).rows
         ]
 
@@ -57,7 +57,13 @@ class CitationsService:
         # the acknowledgment for IDC itself, alongside the recommendation on CitationsResult.
         idc_ack = self._fetch(_MAIN_IDC_DOI, accept, fmt, timeout)
 
-        return CitationsResult(format=fmt, citations=citations, idc_acknowledgment=idc_ack)
+        return CitationsResult(
+            format=fmt,
+            citations=citations,
+            idc_acknowledgment=idc_ack,
+            filters_applied=f.applied,
+            warnings=f.warnings,
+        )
 
     @staticmethod
     def _fetch(doi: str, accept: str, fmt: str, timeout: float):
