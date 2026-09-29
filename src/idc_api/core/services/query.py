@@ -17,11 +17,13 @@ class QueryService:
         tables = []
         for name in self.backend.list_tables():
             sch = schema.table_schema(name)
+            names = {c["name"] for c in sch["columns"]}
             tables.append(
                 TableInfo(
                     name=name,
                     description=sch["description"],
                     column_count=len(sch["columns"]),
+                    notable_columns=[c for c in schema.NOTABLE_COLUMNS.get(name, []) if c in names],
                 )
             )
         return TableList(tables=tables)

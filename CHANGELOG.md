@@ -29,6 +29,15 @@ Refactors, CI, and formatting land in the git history, not here.
   `analysis_result_id` values, as it already did for `collection_id`.
 - `get_attribute_values` / `GET /v3/attributes/{attribute}/values` return `null_count`, the
   number of series with no value, which `values` does not list.
+- **Release history: `GET /v3/releases/changes?version=N` and the MCP tool
+  `get_release_changes(version)`** — what changed in an IDC release versus the previous one:
+  series added / revised / removed (with size in TB and patients affected), collections that are
+  new / updated / removed, and analysis results that gained series. Any past release can be
+  described, computed from the served release's `index` + `prior_versions_index`; `version`
+  defaults to the served release.
+- MCP prompt **`whats_new`** (optional `version`) — a ready-made "summarize this release" request.
+- `GET /v3/tables` / `list_tables`: each table now carries **`notable_columns`**, a few columns
+  worth knowing before writing SQL (e.g. `series_init_idc_version` on `index`).
 
 ### Changed
 
@@ -39,6 +48,11 @@ Refactors, CI, and formatting land in the git history, not here.
   `origin_patient`, `ImageOrientationPatient` and `slice_spacing_mm`. `GET /v3/version` and
   `get_idc_version` report `idc_index_data_version` `25.0.4`; collection, series, and size totals
   are unchanged.
+- `prior_versions_index` is now documented: a table description and descriptions for
+  `min_idc_version`, `max_idc_version`, `crdc_series_uuid`, and `series_size_MB` (upstream ships
+  them empty).
+- The `get_idc_version` tool description no longer implies the server can only speak to one
+  release; it points at `get_release_changes` and the version-history columns.
 
 ### Fixed
 
