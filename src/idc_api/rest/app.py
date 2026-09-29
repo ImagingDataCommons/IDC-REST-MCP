@@ -32,6 +32,7 @@ from ..core.models import (
     CollectionSummary,
     LicensesResult,
     ManifestResponse,
+    ReleaseChanges,
     SqlResult,
     Stats,
     TableList,
@@ -424,6 +425,24 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         """Headline totals for all of IDC: the number of collections, analysis results,
         patients, studies, series, and instances, plus the total size in TB."""
         return C().discovery.stats()
+
+    @app.get(
+        f"{API_PREFIX}/releases/changes",
+        response_model=ReleaseChanges,
+        tags=["discovery"],
+        summary="What changed in a release",
+    )
+    def release_changes(
+        version: int | None = Query(
+            None, ge=1, description="IDC release number, e.g. 24; omit for the served release."
+        ),
+    ):
+        """What's new in an IDC data release relative to the previous one: series added,
+        revised, and removed (with size in TB and patients affected), collections that were
+        newly added, updated, or removed, and analysis results that gained series. Computed from
+        the served release's own tables (`index` plus `prior_versions_index`), so any past
+        release can be described, not just the latest."""
+        return C().releases.release_changes(version)
 
     @app.get(
         f"{API_PREFIX}/collections",

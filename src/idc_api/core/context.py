@@ -13,6 +13,7 @@ from .services import (
     LicenseService,
     ManifestService,
     QueryService,
+    ReleaseService,
     ViewerService,
 )
 
@@ -22,6 +23,7 @@ class AppContext:
         self.settings = settings or get_settings()
         self.backend = DuckDBBackend(self.settings)
         self.discovery = DiscoveryService(self.backend)
+        self.releases = ReleaseService(self.backend)
         self.cohort = CohortService(self.backend, self.settings)
         self.manifest = ManifestService(self.backend, self.settings)
         self.query = QueryService(self.backend, self.settings)

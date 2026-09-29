@@ -36,6 +36,63 @@ class Stats(BaseModel):
     size_TB: float
 
 
+class CollectionChange(BaseModel):
+    collection_id: str
+    status: str = Field(
+        ...,
+        description="'new' (no series in the previous release), 'removed' (no series in this "
+        "release), or 'updated' (present in both, with series added/revised/removed).",
+    )
+    series_added: int
+    series_revised: int
+    series_removed: int
+    size_TB_added: float
+    size_TB_revised: float
+    size_TB_removed: float
+    patients_affected: int = Field(
+        ..., description="Distinct patients with at least one added, revised, or removed series."
+    )
+
+
+class AnalysisResultChange(BaseModel):
+    analysis_result_id: str
+    is_new: bool = Field(..., description="True if this analysis result first appeared here.")
+    series_added: int
+
+
+class ReleaseChanges(BaseModel):
+    """What changed in one IDC release relative to the one before it."""
+
+    idc_version: str = Field(..., description="The release described, e.g. 'v24'.")
+    release_date: str | None = None
+    previous_version: str | None = Field(None, description="The release compared against.")
+    previous_release_date: str | None = None
+    current_version: str = Field(..., description="The release this server serves.")
+    series_added: int
+    series_revised: int
+    series_removed: int
+    size_TB_added: float
+    size_TB_revised: float
+    size_TB_removed: float
+    patients_affected: int
+    new_collections: list[str] = Field(
+        default_factory=list, description="Collections that first appeared in this release."
+    )
+    removed_collections: list[str] = Field(
+        default_factory=list, description="Collections with no series left in this release."
+    )
+    collections: list[CollectionChange] = Field(
+        default_factory=list, description="Per-collection change, largest additions first."
+    )
+    analysis_results: list[AnalysisResultChange] = Field(
+        default_factory=list,
+        description="Analysis results that gained series in this release. Counted from series "
+        "still present in the current release, so for an older release it omits series that were "
+        "later removed.",
+    )
+    note: str = ""
+
+
 class CollectionSummary(BaseModel):
     collection_id: str
     collection_name: str | None = None
@@ -117,6 +174,11 @@ class TableInfo(BaseModel):
     name: str
     description: str = ""
     column_count: int
+    notable_columns: list[str] = Field(
+        default_factory=list,
+        description="A few columns worth knowing about before writing SQL (not the full list — "
+        "get_table_schema has every column with its description).",
+    )
 
 
 class TableList(BaseModel):

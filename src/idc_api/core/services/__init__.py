@@ -11,6 +11,7 @@ from .discovery import DiscoveryService
 from .licenses import LicenseService
 from .manifest import ManifestService
 from .query import QueryService
+from .releases import ReleaseService
 from .viewer import ViewerService
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "LicenseService",
     "ManifestService",
     "QueryService",
+    "ReleaseService",
     "ViewerService",
 ]

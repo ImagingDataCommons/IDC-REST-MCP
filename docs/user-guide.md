@@ -54,7 +54,7 @@ understanding, because picking the right one makes everything else easy:
 
 | Surface | Answers | REST | MCP tools |
 |---|---|---|---|
-| **Discovery** | "What exists? What can I filter on?" | `GET /v3/version`, `/v3/stats`, `/v3/collections`, `/v3/collections/{id}`, `/v3/analysis_results`, `/v3/attributes`, `/v3/attributes/{attr}/values` | `get_idc_version`, `get_stats`, `list_collections`, `get_collection`, `list_analysis_results`, `list_attributes`, `get_attribute_values` |
+| **Discovery** | "What exists? What can I filter on? What changed in a release?" | `GET /v3/version`, `/v3/releases/changes`, `/v3/stats`, `/v3/collections`, `/v3/collections/{id}`, `/v3/analysis_results`, `/v3/attributes`, `/v3/attributes/{attr}/values` | `get_idc_version`, `get_release_changes`, `get_stats`, `list_collections`, `get_collection`, `list_analysis_results`, `list_attributes`, `get_attribute_values` |
 | **Cohort** | "How big is *my* selection, and what's in it?" | `POST /v3/cohort/counts`, `POST /v3/cohort/manifest` | `build_cohort` |
 | **Retrieval** | "Give me the download links" | `POST /v3/cohort/manifest.txt` | `get_cohort_urls` |
 | **SQL** | "Run my custom query" + schema | `GET /v3/tables`, `/v3/tables/{table}`, `POST /v3/sql` | `list_tables`, `get_table_schema`, `run_sql` |
@@ -144,7 +144,7 @@ per-collection, keyed by `collection_id`).
 | `index` | one row per **series** — the main table |
 | `collections_index` | one row per collection (curated metadata) |
 | `analysis_results_index` | one row per analysis result |
-| `version_metadata_index` / `prior_versions_index` | IDC release versions / removed series |
+| `version_metadata_index` / `prior_versions_index` | IDC release dates / superseded or removed series versions (`min_idc_version`–`max_idc_version`) — see [Release history](#release-history) |
 | `seg_index`, `ann_index`, `ann_group_index`, `rtstruct_index` | segmentations / annotations / RT structures: **what was segmented** (`SegmentedPropertyType_CodeMeanings` — `BodyPartExamined` reflects the source acquisition, not this) and the **reference** to the image series they derive from (`segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`) |
 | `ct_index`, `mr_index`, `pt_index` | per-modality acquisition parameters (slice thickness, kVp, TE/TR, injected dose…) |
 | `sm_index`, `sm_instance_index` | slide-microscopy (pathology) series / instance metadata |
@@ -215,6 +215,34 @@ WHERE i.collection_id = 'nlst' AND i.Modality = 'CT'
 > `IDC_API_INCLUDE_INDICES=all` includes it; the clinical tools return a clear "not included"
 > error otherwise).
 
+### Release history
+
+The server serves **one** IDC data release (see `GET /v3/version` / `get_idc_version`), but that
+release carries the history of every earlier one, so "what's new in v24" or "what changed since
+v20" are answerable without external release notes:
+
+- On `index`, `series_init_idc_version` is the release a series first appeared in, and
+  `series_revised_idc_version` the release its current content dates from.
+- `prior_versions_index` holds every **superseded or removed version** of a series — one row per
+  old `crdc_series_uuid`, valid from `min_idc_version` through `max_idc_version`. If its
+  `SeriesInstanceUID` is still in `index` the series was revised; otherwise it was removed.
+- `version_metadata_index` dates each release.
+
+`GET /v3/releases/changes?version=N` / `get_release_changes(version=N)` does the diff of release
+N against N-1 for you: series **added / revised / removed** (with TB and patients affected),
+collections that are **new / updated / removed**, and the analysis results that gained series.
+Omit `version` for the served release. For per-series detail, query the columns above with SQL —
+e.g. the series of a collection that changed since v20:
+
+```sql
+SELECT SeriesInstanceUID, series_init_idc_version, series_revised_idc_version
+FROM index
+WHERE collection_id = 'nlst' AND series_revised_idc_version > 20
+```
+
+The diff tells you *what* changed, not *why*; for the narrative, see the
+[IDC release notes](https://learn.canceridc.dev/data/data-release-notes).
+
 ---
 
 ## 2. Using the REST API
@@ -230,13 +258,14 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /v3/docs
 | Method & path | Purpose |
 |---|---|
 | `GET /v3/version` | IDC data release served (e.g. `v24`) + pinned index version, **and** this server's own software version (`api_version`, plus `build` if the deploy stamped one) |
+| `GET /v3/releases/changes?version=` | What changed in an IDC release vs. the previous one: series added / revised / removed, new / updated / removed collections, analysis results (default: the served release) |
 | `GET /v3/stats` | Headline totals (collections, patients, studies, series, size_TB) |
 | `GET /v3/collections` | List collections (datasets) |
 | `GET /v3/collections/{id}` | Collection detail: counts, modalities, license breakdown |
 | `GET /v3/analysis_results` | Derived datasets (segmentations/annotations) |
 | `GET /v3/attributes` | Filterable attributes (name, type, term/range, categorical) |
 | `GET /v3/attributes/{attr}/values?limit=` | Distinct values + counts for an attribute, plus a `note` caveat when one applies (e.g. `BodyPartExamined` ≠ segmented anatomy) |
-| `GET /v3/tables` | Tables available to SQL |
+| `GET /v3/tables` | Tables available to SQL, each with a few `notable_columns` |
 | `GET /v3/tables/{table}` | Column schema for a table |
 | `GET /v3/clinical/tables?collection_id=` | Per-collection clinical tables (optionally one collection) |
 | `GET /v3/clinical/tables/{table}` | Clinical table columns + human-readable labels |
@@ -285,6 +314,8 @@ curl -s 'localhost:8000/v3/attributes/Modality/values?limit=10'
 
 ```bash
 curl -s localhost:8000/v3/version                 # data release + this server's build
+curl -s localhost:8000/v3/releases/changes       # what's new in the served release
+curl -s 'localhost:8000/v3/releases/changes?version=23'  # …or in any earlier one
 curl -s localhost:8000/v3/stats                   # headline totals
 curl -s localhost:8000/v3/collections             # list datasets
 curl -s localhost:8000/v3/collections/nlst        # one collection's detail
@@ -368,6 +399,7 @@ uv run idc-mcp --http --host 0.0.0.0 --port 8080     # hosted/shared
 
 - **Discovery:** `get_idc_version`, `get_stats`, `list_collections`, `get_collection`,
   `list_analysis_results`, `list_attributes`, `get_attribute_values`
+- **Release history:** `get_release_changes`
 - **Schema (for SQL):** `list_tables`, `get_table_schema`
 - **Clinical data:** `list_clinical_tables`, `get_clinical_table_schema`, `get_clinical_table`
 - **Cohort / query:** `build_cohort`, `run_sql`
@@ -375,6 +407,8 @@ uv run idc-mcp --http --host 0.0.0.0 --port 8080     # hosted/shared
   `get_citations`, `get_licenses`
 - **Resources:** `idc://guide` (data model + recommended workflow), `idc://tables`,
   `idc://schema/{table}`
+- **Prompts:** `whats_new` (optional `version`) — a ready-made "summarize what's new in this
+  release" request for clients that show MCP prompts
 
 Tool descriptions are prescriptive about *when* to call each one, and the server ships an
 `idc://guide` resource with the same conceptual model as this document — so a capable agent can
