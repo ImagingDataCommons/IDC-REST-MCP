@@ -151,6 +151,50 @@ TABLE_DESCRIPTION_OVERRIDES: dict[str, str] = {
         "(join to index on dicom_patient_id = index.PatientID). Use this table's column_label and "
         "value mappings to interpret their often-cryptic coded columns."
     ),
+    # Upstream ships this table with no description at all.
+    "prior_versions_index": (
+        "Series versions IDC served in an earlier release but no longer serves: one row per "
+        "superseded or removed version of a series (identified by crdc_series_uuid), valid from "
+        "min_idc_version through max_idc_version. A SeriesInstanceUID that is also in `index` was "
+        "revised (its current version starts at index.series_revised_idc_version); one that is "
+        "not was removed. Together with `index` this reconstructs the content of any past release "
+        "— get_release_changes does that diff for you."
+    ),
+}
+
+# Fill-ins for upstream column descriptions that are empty. Applied only where upstream has no
+# text, so an upstream description takes over automatically once it lands.
+COLUMN_DESCRIPTION_FILLINS: dict[str, dict[str, str]] = {
+    "prior_versions_index": {
+        "crdc_series_uuid": "Identifier of this specific version of the series (changes on "
+        "every revision); never equal to a crdc_series_uuid in `index`.",
+        "min_idc_version": "First IDC release (integer) that served this version of the series.",
+        "max_idc_version": "Last IDC release (integer) that served this version of the series; "
+        "the next release revised or removed it.",
+        "series_size_MB": "Size of this version of the series, in MB.",
+    },
+}
+
+# A handful of columns per table surfaced by list_tables, so a caller learns they exist without
+# having to call get_table_schema first (a caller that guesses the obvious columns right never
+# does). Not a full listing; names absent from a table's schema are dropped.
+NOTABLE_COLUMNS: dict[str, list[str]] = {
+    "index": [
+        "collection_id",
+        "analysis_result_id",
+        "PatientID",
+        "SeriesInstanceUID",
+        "Modality",
+        "BodyPartExamined",
+        "SeriesDescription",
+        "license_short_name",
+        "series_size_MB",
+        "series_init_idc_version",
+        "series_revised_idc_version",
+    ],
+    "version_metadata_index": ["idc_version", "version_timestamp"],
+    "prior_versions_index": ["SeriesInstanceUID", "min_idc_version", "max_idc_version"],
+    "seg_index": ["segmented_SeriesInstanceUID", "SegmentedPropertyType_CodeMeanings"],
 }
 
 
@@ -158,14 +202,16 @@ TABLE_DESCRIPTION_OVERRIDES: dict[str, str] = {
 def table_schema(table: str) -> dict:
     """Return ``{name, description, columns:[{name,type,description}]}`` for a table,
     sourced from the idc-index schema JSON shipped in INDEX_METADATA (table descriptions may be
-    repointed inward via ``TABLE_DESCRIPTION_OVERRIDES``)."""
+    repointed inward via ``TABLE_DESCRIPTION_OVERRIDES``; empty column descriptions are filled
+    from ``COLUMN_DESCRIPTION_FILLINS``)."""
     meta = idc_index_data.INDEX_METADATA[metadata_key(table)]
     schema = meta.get("schema", {}) or {}
+    fillins = COLUMN_DESCRIPTION_FILLINS.get(table, {})
     columns = [
         {
             "name": c["name"],
             "type": _column_type(c),
-            "description": c.get("description", "") or "",
+            "description": c.get("description", "") or fillins.get(c["name"], ""),
         }
         for c in schema.get("columns", [])
     ]
