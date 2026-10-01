@@ -13,6 +13,16 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+## [3.0.0b4] — 2026-10-01
+
+Security-maintenance release; no API or MCP contract changes.
+
+### Security
+
+- Dependency updates for known vulnerabilities: PyJWT 2.13.0 → 2.15.1 (CVE-2026-102274) and
+  urllib3 2.7.0 → 2.8.0 (CVE-2026-97687, CVE-2026-97688, CVE-2026-97689). Also refreshed: MCP SDK
+  1.29 → 1.30, anyio 4.14.2, pydantic 2.13.5, pyarrow 25.0.1.
+
 ## [3.0.0b3] — 2026-08-10
 
 Beta iteration: one shape for every cohort filter, and no request that silently answers with the
@@ -109,7 +119,8 @@ served by a different backend and v3 lives only under `/v3/*`.
   (NCI security policy). Max-age is configurable via `IDC_API_HSTS_MAX_AGE` — default one year;
   dev/test deploys use 3600.
 
-[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b3...HEAD
+[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b4...HEAD
+[3.0.0b4]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b3...v3.0.0b4
 [3.0.0b3]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b2...v3.0.0b3
 [3.0.0b2]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b1...v3.0.0b2
 [3.0.0b1]: https://github.com/ImagingDataCommons/IDC-REST-MCP/releases/tag/v3.0.0b1
