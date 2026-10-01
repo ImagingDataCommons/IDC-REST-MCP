@@ -21,7 +21,7 @@ Security-maintenance release; no API or MCP contract changes.
 
 - Dependency updates for known vulnerabilities: PyJWT 2.13.0 → 2.15.1 (CVE-2026-102274) and
   urllib3 2.7.0 → 2.8.0 (CVE-2026-97687, CVE-2026-97688, CVE-2026-97689). Also refreshed: MCP SDK
-  1.29 → 1.30, pydantic 2.13.5, pyarrow 25.0.1.
+  1.29 → 1.30, anyio 4.14.2, pydantic 2.13.5, pyarrow 25.0.1.
 
 ## [3.0.0b3] — 2026-08-10
 
