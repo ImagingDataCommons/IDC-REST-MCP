@@ -186,6 +186,8 @@ def table_schema(table: str) -> dict:
 #             AND across attributes (the standard cohort-filter convention).
 #   - "range": numeric or lexically-ordered (ISO date) column, filtered by gte/lte.
 # ``categorical`` flags low-cardinality columns worth offering value-discovery for.
+# ``date`` marks a range column stored as an ISO ``YYYY-MM-DD`` string; its bounds must be
+# dates in that form, since a string column compares any other text lexically.
 # ``note`` is a semantic caveat surfaced wherever the attribute is described (list_attributes
 # descriptions and get_attribute_values responses) — use it when the obvious reading of an
 # attribute is wrong for some series and the right column lives elsewhere. Durable facts
@@ -220,13 +222,14 @@ FILTERABLE_ATTRIBUTES: list[dict] = [
     {"name": "series_size_MB", "kind": "range", "categorical": False},
     {"name": "series_init_idc_version", "kind": "range", "categorical": False},
     {"name": "series_revised_idc_version", "kind": "range", "categorical": False},
-    {"name": "StudyDate", "kind": "range", "categorical": False},
-    {"name": "SeriesDate", "kind": "range", "categorical": False},
+    {"name": "StudyDate", "kind": "range", "categorical": False, "date": True},
+    {"name": "SeriesDate", "kind": "range", "categorical": False, "date": True},
 ]
 
 _ATTR_BY_NAME = {a["name"]: a for a in FILTERABLE_ATTRIBUTES}
 TERM_ATTRIBUTES = {a["name"] for a in FILTERABLE_ATTRIBUTES if a["kind"] == "term"}
 RANGE_ATTRIBUTES = {a["name"] for a in FILTERABLE_ATTRIBUTES if a["kind"] == "range"}
+DATE_RANGE_ATTRIBUTES = {a["name"] for a in FILTERABLE_ATTRIBUTES if a.get("date")}
 
 
 @lru_cache(maxsize=1)
@@ -238,6 +241,19 @@ def _index_column_descriptions() -> dict[str, dict]:
 def index_columns() -> frozenset[str]:
     """Column names of the main `index` table (for validating identifiers we can't bind)."""
     return frozenset(_index_column_descriptions().keys())
+
+
+_NUMERIC_TYPES = {"INTEGER", "INT64", "FLOAT", "FLOAT64", "NUMERIC", "BIGNUMERIC"}
+
+
+@lru_cache(maxsize=1)
+def numeric_range_attributes() -> frozenset[str]:
+    """Range attributes backed by a numeric column. The rest are the string-typed date columns
+    (DATE_RANGE_ATTRIBUTES), which is why a range bound may be a str at all."""
+    col_desc = _index_column_descriptions()
+    return frozenset(
+        a for a in RANGE_ATTRIBUTES if col_desc.get(a, {}).get("type", "").upper() in _NUMERIC_TYPES
+    )
 
 
 def filterable_attributes() -> list[dict]:

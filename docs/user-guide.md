@@ -315,7 +315,10 @@ curl -s localhost:8000/v3/cohort/manifest \
 ```
 
 Filters: `terms` is `{attribute: [values]}` (equality/IN — OR within an attribute, AND across
-attributes); `ranges` is `{attribute: {"gte": x, "lte": y}}`.
+attributes); `ranges` is `{attribute: {"gte": x, "lte": y}}`. Bounds on numeric attributes
+must be numbers; bounds on `StudyDate` / `SeriesDate` must be dates as `"YYYY-MM-DD"` (DICOM
+`"YYYYMMDD"` is accepted and normalized). Any other bound is rejected with a 400 rather than
+silently matching nothing.
 
 **Get the full manifest as plain text** (for `idc download-from-manifest` / `s5cmd`):
 

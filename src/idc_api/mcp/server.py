@@ -379,7 +379,8 @@ def build_cohort(
 
     `terms` is {attribute: [values]} for equality/IN (e.g. {"Modality": ["MR"],
     "BodyPartExamined": ["BREAST"]}). `ranges` is {attribute: {"gte": x, "lte": y}} for
-    numeric/date ranges. Discover valid attributes with list_attributes and valid values with
+    numeric/date ranges — numbers for numeric attributes, 'YYYY-MM-DD' strings for StudyDate/
+    SeriesDate. Discover valid attributes with list_attributes and valid values with
     get_attribute_values. For anything these structured filters can't express, use run_sql.
 
     At least one filter predicate is required — an unfiltered cohort is the whole 100+ TB archive;

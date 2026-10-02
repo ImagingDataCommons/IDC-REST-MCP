@@ -13,6 +13,13 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Range filters now validate their bounds instead of failing or silently matching nothing:
+  numeric attributes require a number (previously an internal error), and `StudyDate` /
+  `SeriesDate` require a real date as `"YYYY-MM-DD"` (`"YYYYMMDD"` is normalized). Invalid
+  bounds return a 400 `invalid_query` / MCP tool error naming the field.
+
 ## [3.0.0b4] — 2026-10-01
 
 Security-maintenance release; no API or MCP contract changes.
