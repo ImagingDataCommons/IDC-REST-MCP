@@ -55,6 +55,62 @@ def test_misspelled_filter_keys_are_rejected(client):
         assert client.post("/v3/cohort/counts", json=body).status_code == 422, body
 
 
+def test_non_numeric_bound_on_numeric_range_is_a_400(client):
+    """Range bounds admit strings (the date columns are strings); against a numeric column a
+    non-numeric one used to fail inside DuckDB's cast and surface as a 500."""
+    for attr in ("instanceCount", "series_size_MB"):
+        body = {"filters": {"terms": _TERMS, "ranges": {attr: {"gte": "1 AND 1=1"}}}}
+        r = client.post("/v3/cohort/counts", json=body)
+        assert r.status_code == 400, (attr, r.text[:200])
+        assert "is not a number" in r.json()["error"]["message"]
+
+    # A numeric string is still a number, and is echoed as one.
+    body = {"filters": {"terms": _TERMS, "ranges": {"instanceCount": {"gte": "2"}}}}
+    r = client.post("/v3/cohort/counts", json=body).json()
+    assert r["filters_applied"]["ranges"] == {"instanceCount": {"gte": 2.0, "lte": None}}
+
+    # NaN parses as a float but matches nothing; it is refused like any other non-number.
+    body = {"filters": {"terms": _TERMS, "ranges": {"instanceCount": {"gte": "nan"}}}}
+    assert client.post("/v3/cohort/counts", json=body).status_code == 400
+
+
+def test_date_range_bounds_must_be_dates(client):
+    """The date columns are strings, so a non-date bound used to compare lexically and answer
+    with a plausible-looking zero instead of an error."""
+    for bad in ("nope", "01/31/2020", "2020", 20200101):
+        body = {"filters": {"terms": _TERMS, "ranges": {"StudyDate": {"gte": bad}}}}
+        r = client.post("/v3/cohort/counts", json=body)
+        assert r.status_code == 400, (bad, r.text[:200])
+        assert "YYYY-MM-DD" in r.json()["error"]["message"]
+
+    # Correctly formatted but impossible: say so, rather than repeat the format it already has.
+    for bad in ("2020-02-30", "20201301"):
+        body = {"filters": {"terms": _TERMS, "ranges": {"StudyDate": {"lte": bad}}}}
+        r = client.post("/v3/cohort/counts", json=body)
+        assert r.status_code == 400, (bad, r.text[:200])
+        message = r.json()["error"]["message"]
+        assert "not a real calendar date" in message and "YYYY-MM-DD" not in message
+
+    # ISO dates pass; DICOM DA (YYYYMMDD) is normalized to the stored form and echoed as such.
+    iso = {"filters": {"terms": _TERMS, "ranges": {"StudyDate": {"gte": "1900-01-01"}}}}
+    dicom = {"filters": {"terms": _TERMS, "ranges": {"StudyDate": {"gte": "19000101"}}}}
+    a = client.post("/v3/cohort/counts", json=iso).json()
+    b = client.post("/v3/cohort/counts", json=dicom).json()
+    assert a["series"] > 0 and a["series"] == b["series"]
+    assert b["filters_applied"]["ranges"] == {"StudyDate": {"gte": "1900-01-01", "lte": None}}
+
+
+async def test_mcp_bad_range_bounds_are_clean_tool_errors(parse_mcp):
+    with pytest.raises(ToolError, match="is not a number"):
+        await mcp.call_tool(
+            "build_cohort", {"terms": _TERMS, "ranges": {"instanceCount": {"gte": "1 AND 1=1"}}}
+        )
+    with pytest.raises(ToolError, match="YYYY-MM-DD"):
+        await mcp.call_tool(
+            "build_cohort", {"terms": _TERMS, "ranges": {"SeriesDate": {"lte": "yesterday"}}}
+        )
+
+
 # --- what survived compilation is always reported ------------------------------------------
 
 

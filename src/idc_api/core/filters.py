@@ -12,11 +12,17 @@ from a filter echoes them (see ``CohortCounts.filters_applied`` / ``.warnings``)
 
 from __future__ import annotations
 
+import math
+import re
+from datetime import date
 from typing import Any, NamedTuple
 
 from . import schema
 from .errors import InvalidQueryError
 from .models import CohortFilters, NumericRange
+
+# ISO extended (2020-01-31) or DICOM DA / ISO basic (20200131); both normalize to the stored form.
+_DATE_RE = re.compile(r"\d{4}-?\d{2}-?\d{2}")
 
 UNFILTERED_WARNING = (
     "No filter predicates were applied, so this result describes the ENTIRE IDC archive, not a "
@@ -77,6 +83,14 @@ def compile_filters(filters: CohortFilters) -> CompiledFilters:
                 "constrains nothing."
             )
             continue
+        if attr in schema.numeric_range_attributes():
+            rng = NumericRange(
+                gte=_numeric_bound(attr, "gte", rng.gte), lte=_numeric_bound(attr, "lte", rng.lte)
+            )
+        elif attr in schema.DATE_RANGE_ATTRIBUTES:
+            rng = NumericRange(
+                gte=_date_bound(attr, "gte", rng.gte), lte=_date_bound(attr, "lte", rng.lte)
+            )
         if rng.gte is not None:
             clauses.append(f'"{attr}" >= ?')
             params.append(rng.gte)
@@ -93,6 +107,52 @@ def compile_filters(filters: CohortFilters) -> CompiledFilters:
         params=params,
         applied=CohortFilters(terms=applied_terms, ranges=applied_ranges),
         warnings=warnings,
+    )
+
+
+def _numeric_bound(attr: str, key: str, value: float | str | None) -> float | None:
+    """Coerce a bound on a numeric column to a finite number.
+
+    ``NumericRange`` admits strings because the date columns are strings. Bound against a
+    numeric column, a non-numeric string fails inside DuckDB's cast — an engine error, not a
+    caller one — so it is refused here with the reason instead. NaN/inf parse as floats but
+    compare to nothing useful, so they are refused too.
+    """
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        number = math.nan
+    if not math.isfinite(number):
+        raise InvalidQueryError(
+            f"Range filter {attr!r} is numeric, but {key!r} is {value!r}, which is not a number."
+        )
+    return number
+
+
+def _date_bound(attr: str, key: str, value: float | str | None) -> str | None:
+    """Normalize a bound on a date column to the stored ``YYYY-MM-DD`` form.
+
+    The date columns are strings, so DuckDB compares a bound lexically: anything that isn't an
+    ISO date (``"nope"``, ``"01/31/2020"``, a bare number) runs fine and silently matches the
+    wrong series — usually none. Refuse it instead of answering with a plausible-looking zero.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and _DATE_RE.fullmatch(value.strip()):
+        try:
+            return date.fromisoformat(value.strip()).isoformat()
+        except ValueError:
+            # Right shape, impossible date (2020-02-30): repeating "use YYYY-MM-DD" back to a
+            # caller who did would only prompt a retry of the same value.
+            raise InvalidQueryError(
+                f"Range filter {attr!r} bound {key!r} is {value!r}, which is not a real "
+                "calendar date."
+            ) from None
+    raise InvalidQueryError(
+        f"Range filter {attr!r} is a date, but {key!r} is {value!r}; give it as 'YYYY-MM-DD' "
+        "(e.g. '2020-01-31')."
     )
 
 
