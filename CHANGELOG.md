@@ -13,7 +13,22 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Serving IDC v25** (`idc-index` 0.13.0 / `idc-index-data` 25.0.0, previously v24): 179
+  collections, 26 analysis results, 1,044,191 series, 99.9 TB. `GET /v3/version` and the MCP
+  `get_idc_version` now report `v25`. The release adds a `provenance` column to
+  `analysis_results_index` — a struct naming who contributed the data to IDC, who provided the
+  source material, who performed de-identification, and who produced the DICOM representation —
+  and drops `gcs_bucket_1` from `prior_versions_index`.
+
 ### Fixed
+
+- `get_table_schema` / `GET /v3/tables/{table}` now describe struct (`RECORD`) columns by their
+  full field list — `analysis_results_index.provenance` and the nested
+  `collections_index.sources` — instead of a bare `RECORD` that named no field a caller could
+  select. Writing `SELECT provenance.data_contributor` in `run_sql` no longer requires guessing
+  the field names.
 
 - Range filters now validate their bounds instead of failing or silently matching nothing:
   numeric attributes require a number (previously an internal error), and `StudyDate` /

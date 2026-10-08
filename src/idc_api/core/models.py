@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class VersionInfo(BaseModel):
-    idc_version: str = Field(..., description="IDC data release served, e.g. 'v24'.")
+    idc_version: str = Field(..., description="IDC data release served, e.g. 'v25'.")
     idc_index_data_version: str = Field(..., description="Pinned idc-index-data package version.")
     api_version: str = Field(
         ...,

@@ -169,6 +169,19 @@ GROUP BY 1 ORDER BY slides DESC
 > `list_contains(col, 'value')`, not `=` or `LIKE`. If a query is invalid, the error response
 > carries DuckDB's own message (including its "Did you mean …?" suggestions), so fix and retry.
 
+> **Struct columns:** a few columns are *structs*, shown in the schema as their full field list
+> (`STRUCT(field TYPE, …)`) rather than a plain type. Reach a field with dot notation —
+> `SELECT provenance.data_contributor FROM analysis_results_index` — where `provenance` records
+> who contributed the data to IDC, who provided the source material, who performed
+> de-identification, and who produced the DICOM representation. A struct type ending in `[]` is
+> a *list* of structs, so unnest it first:
+>
+> ```sql
+> SELECT s.provenance.dicom_conversion_by AS converted_by, count(*) AS collections
+> FROM (SELECT unnest(sources) AS s FROM collections_index)
+> GROUP BY 1 ORDER BY collections DESC
+> ```
+
 > **Still BigQuery-only:** a handful of things remain outside these indices — *per-individual-segment*
 > detail (each segment rather than the series-level `DISTINCT`-aggregated code lists in
 > `seg_index`), DICOM SR quantitative/qualitative measurements (radiomics), and private DICOM
@@ -229,7 +242,7 @@ uv run idc-api          # http://127.0.0.1:8000  — Swagger UI at /v3/docs
 
 | Method & path | Purpose |
 |---|---|
-| `GET /v3/version` | IDC data release served (e.g. `v24`) + pinned index version, **and** this server's own software version (`api_version`, plus `build` if the deploy stamped one) |
+| `GET /v3/version` | IDC data release served (e.g. `v25`) + pinned index version, **and** this server's own software version (`api_version`, plus `build` if the deploy stamped one) |
 | `GET /v3/stats` | Headline totals (collections, patients, studies, series, size_TB) |
 | `GET /v3/collections` | List collections (datasets) |
 | `GET /v3/collections/{id}` | Collection detail: counts, modalities, license breakdown |

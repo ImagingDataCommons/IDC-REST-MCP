@@ -1,6 +1,6 @@
 """Citation resolution: batched where possible, complete regardless.
 
-An unfiltered cohort spans every DOI in IDC (237 at v24). One content-negotiation request each
+An unfiltered cohort spans every DOI in IDC (242 at v25). One content-negotiation request each
 meant 237 serial round-trips holding a worker for minutes, so DataCite's list endpoint — which
 honours the same content negotiation and covers every IDC dataset DOI (TCIA 10.7937, Zenodo
 10.5281) — resolves them in chunks instead.

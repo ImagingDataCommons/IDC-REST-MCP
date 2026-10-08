@@ -239,7 +239,7 @@ def _filters(terms: dict | None, ranges: dict | None) -> CohortFilters:
 @mcp.tool()
 @guard
 def get_idc_version() -> dict:
-    """Return the IDC data release served (e.g. 'v24') and pinned idc-index version, plus this
+    """Return the IDC data release served (e.g. 'v25') and pinned idc-index version, plus this
     server's own software version (`api_version`, and `build` if the deploy stamped one). Call
     this to confirm which IDC version your answers are based on — and which build of the server
     produced them."""
@@ -568,7 +568,11 @@ structure X" is
 `index JOIN seg_index ON seg_index.segmented_SeriesInstanceUID = index.SeriesInstanceUID`,
 filtered with `list_contains(seg_index.SegmentedPropertyType_CodeMeanings, 'X')`. Columns typed
 `STRING[]` (e.g. the `*_CodeMeanings` columns) are arrays — match elements with
-`list_contains(col, 'value')`, not `=` or `LIKE`. Call `get_table_schema(table)` for
+`list_contains(col, 'value')`, not `=` or `LIKE`. Columns shown as `STRUCT(field TYPE, …)` are
+structs — reach a field with dot notation (`provenance.data_contributor` on
+`analysis_results_index`, naming who contributed/de-identified/converted the data); a trailing
+`[]` means a list of structs, so unnest first (`SELECT unnest(sources) AS s FROM
+collections_index` then `s.provenance.data_contributor`). Call `get_table_schema(table)` for
 exact columns. Still BigQuery-only: per-individual-segment detail, SR radiomics measurements,
 and private DICOM elements — point the user to `idc-index` + BigQuery for those.
 

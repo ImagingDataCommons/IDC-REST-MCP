@@ -28,7 +28,7 @@ _MAIN_IDC_DOI = "10.1148/rg.230180"
 # Batch resolution. Every IDC *dataset* DOI is DataCite-registered (TCIA 10.7937, Zenodo
 # 10.5281), and DataCite's list endpoint honours the same content negotiation as a single-DOI
 # resolve — so one request returns N formatted citations instead of N round-trips. This matters:
-# an unfiltered cohort spans every DOI in the archive (237 at IDC v24), which one-at-a-time meant
+# an unfiltered cohort spans every DOI in the archive (242 at IDC v25), which one-at-a-time meant
 # 237 serial network calls holding a worker for minutes.
 _DATACITE_DOIS_URL = "https://api.datacite.org/dois"
 # All 237 DOIs in a single OR-query URL gets an HTTP 414 from DataCite; 50 keeps the URL near
