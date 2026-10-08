@@ -9,7 +9,22 @@ advertised type actually runs.
 
 from __future__ import annotations
 
+import pytest
+
 from idc_api.core import schema
+from idc_api.core.schema import _column_type
+
+
+@pytest.fixture
+def clear_schema_caches():
+    """``table_schema`` / ``_parquet_column_types`` are lru_cached, so a test that changes what
+    they read must clear them on the way in *and* on the way out — otherwise a fake value
+    outlives the monkeypatch and leaks into every later test."""
+    schema._parquet_column_types.cache_clear()
+    schema.table_schema.cache_clear()
+    yield
+    schema._parquet_column_types.cache_clear()
+    schema.table_schema.cache_clear()
 
 
 def _col(ctx, table, name):
@@ -66,9 +81,46 @@ def test_struct_values_survive_serialization(ctx):
     assert isinstance(value["data_contributor"], str)
 
 
-def test_record_without_local_parquet_degrades(ctx):
-    """clinical_index is a specialized index: no local Parquet until it is fetched, so its
-    RECORD column stays un-expanded rather than breaking schema discovery."""
-    assert schema._parquet_column_types("seg_index") == {}
+def test_specialized_index_has_no_local_parquet_to_read(ctx):
+    """A specialized index resolves to no local Parquet (INDEX_METADATA carries None until it
+    is fetched, and fetching puts it in idc-index's cache, not here), so there is nothing to
+    expand from — and clinical_index's RECORD column stays bare."""
+    assert schema._parquet_column_types("clinical_index") == {}
     cols = {c["name"]: c["type"] for c in schema.table_schema("clinical_index")["columns"]}
-    assert cols["values"] in ("RECORD[]", "RECORD") or cols["values"].startswith("STRUCT(")
+    assert cols["values"] == "RECORD[]"
+
+
+def test_column_type_renders_the_bare_fallback(ctx):
+    """With nothing to expand from, a RECORD renders as RECORD/RECORD[] by mode — never as a
+    half-formed STRUCT."""
+    assert (
+        _column_type({"name": "provenance", "type": "RECORD", "mode": "NULLABLE"}, {}) == "RECORD"
+    )
+    assert _column_type({"name": "sources", "type": "RECORD", "mode": "REPEATED"}, {}) == "RECORD[]"
+    # an unrelated expansion must not be borrowed for a column that has none
+    assert (
+        _column_type(
+            {"name": "sources", "type": "RECORD", "mode": "REPEATED"}, {"other": "STRUCT(a INT)"}
+        )
+        == "RECORD[]"
+    )
+
+
+def test_expansion_falls_back_when_the_parquet_goes_missing(monkeypatch, clear_schema_caches):
+    """The real degradation path, forced on a table that otherwise *does* expand: drop its
+    Parquet and provenance must fall back to a bare RECORD instead of raising."""
+    import idc_index_data
+
+    before = {
+        c["name"]: c["type"] for c in schema.table_schema("analysis_results_index")["columns"]
+    }
+    assert before["provenance"].startswith("STRUCT(")  # the expansion is real to begin with
+
+    monkeypatch.setitem(
+        idc_index_data.INDEX_METADATA["analysis_results_index"], "parquet_filepath", None
+    )
+    schema._parquet_column_types.cache_clear()
+    schema.table_schema.cache_clear()
+
+    after = {c["name"]: c["type"] for c in schema.table_schema("analysis_results_index")["columns"]}
+    assert after["provenance"] == "RECORD"
