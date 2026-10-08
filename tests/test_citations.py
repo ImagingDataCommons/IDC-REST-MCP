@@ -1,7 +1,7 @@
 """Citation resolution: batched where possible, complete regardless.
 
 An unfiltered cohort spans every DOI in IDC (242 at v25). One content-negotiation request each
-meant 237 serial round-trips holding a worker for minutes, so DataCite's list endpoint — which
+meant 242 serial round-trips holding a worker for minutes, so DataCite's list endpoint — which
 honours the same content negotiation and covers every IDC dataset DOI (TCIA 10.7937, Zenodo
 10.5281) — resolves them in chunks instead.
 """
@@ -106,7 +106,7 @@ def test_turtle_is_not_batched(svc):
 
 
 def test_chunking_keeps_the_url_short(svc):
-    """237 DOIs in a single OR-query URL gets an HTTP 414 from DataCite, so chunk them."""
+    """242 DOIs in a single OR-query URL gets an HTTP 414 from DataCite, so chunk them."""
     many = [f"10.7937/fake-{i}" for i in range(120)]
     rec = _Recorder(batch_text="")
     CitationsService._resolve(svc(rec), many, "text/x-bibliography", "apa", 30.0)

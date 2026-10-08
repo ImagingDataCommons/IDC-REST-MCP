@@ -9,8 +9,15 @@ authors = [{ name = "Imaging Data Commons" }]
 keywords = ["IDC", "DICOM", "cancer imaging", "MCP", "REST", "idc-index"]
 
 dependencies = [
-    # Query engine + data
-    "idc-index>=0.13.0",
+    # Query engine + data.
+    # idc-index is pinned EXACTLY, unlike every other dependency here, because it transitively
+    # pins idc-index-data (0.13.0 -> 25.0.0) — which *is* the IDC data release this server
+    # advertises at /v3/version and documents in the changelog. The production image installs
+    # from this file alone (the Dockerfile copies pyproject.toml and src, never uv.lock), so a
+    # lower bound would let a rebuild of this very commit bake a later IDC release than the one
+    # it claims to serve. Bump this pin to move IDC versions — see dev/deployment.md
+    # § Updating for a new IDC release.
+    "idc-index==0.13.0",
     "duckdb>=1.5.5",
     "pyarrow>=25.0.0",
     # Shared models / settings
