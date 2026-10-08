@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import hashlib
 from functools import lru_cache
+from pathlib import Path
 
+import duckdb
 import idc_index_data
 
 # Exposed SQL table name -> key in idc_index_data.INDEX_METADATA.
@@ -126,13 +128,51 @@ def include_token(included: list[str]) -> str:
     return f"sub-{digest}"
 
 
-def _column_type(c: dict) -> str:
+@lru_cache(maxsize=None)
+def _parquet_column_types(table: str) -> dict[str, str]:
+    """``{column: DuckDB type}`` read from a table's local Parquet footer, or ``{}`` if there
+    isn't one.
+
+    Only used to expand ``RECORD`` columns. The upstream schema JSON describes a struct as a
+    bare ``RECORD`` with no ``fields``, so the field names exist nowhere else — and an agent
+    told only ``RECORD`` has to guess them, which is exactly what this server tells it not to
+    do. The Parquet footer is the one local source for them.
+
+    Returns ``{}`` for specialized indices (their ``parquet_filepath`` is ``None`` until the
+    index is fetched) so schema discovery keeps working un-expanded, as it must for a table
+    whose data this build never downloaded.
+    """
+    try:
+        path = idc_index_data.INDEX_METADATA[metadata_key(table)].get("parquet_filepath")
+        if not path or not Path(str(path)).exists():
+            return {}
+        with duckdb.connect() as con:
+            rows = con.execute(
+                "SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM read_parquet(?))",
+                [str(path)],
+            ).fetchall()
+        return dict(rows)
+    except Exception:  # pragma: no cover - schema discovery must not fail on a read hiccup
+        return {}
+
+
+def _column_type(c: dict, struct_types: dict[str, str] | None = None) -> str:
     """Render a schema-JSON column type, folding the BigQuery-style ``mode`` field in:
     ``{type: STRING, mode: REPEATED}`` is an *array* column — ``STRING[]`` in DuckDB terms.
     Dropping the mode (as we used to) advertises arrays as plain strings, which steers SQL
     callers into predicates like ``col = 'x'`` / ``col LIKE ...`` that the engine rejects;
-    match array elements with ``list_contains(col, 'x')`` instead."""
+    match array elements with ``list_contains(col, 'x')`` instead.
+
+    ``RECORD`` columns are expanded to the full DuckDB struct type from ``struct_types``
+    (e.g. ``STRUCT(data_contributor VARCHAR, ...)``), since ``RECORD`` alone names no field to
+    select. That type already encodes repetition as a trailing ``[]``, so the ``mode`` is not
+    applied on top of it. Without a local Parquet to read, it stays ``RECORD``/``RECORD[]``.
+    """
     t = c.get("type", "")
+    if t == "RECORD" and struct_types:
+        expanded = struct_types.get(c.get("name", ""))
+        if expanded:
+            return expanded
     return f"{t}[]" if c.get("mode") == "REPEATED" else t
 
 
@@ -161,13 +201,18 @@ def table_schema(table: str) -> dict:
     repointed inward via ``TABLE_DESCRIPTION_OVERRIDES``)."""
     meta = idc_index_data.INDEX_METADATA[metadata_key(table)]
     schema = meta.get("schema", {}) or {}
+    cols = schema.get("columns", [])
+    # Read the Parquet only when a struct column actually needs expanding.
+    struct_types = (
+        _parquet_column_types(table) if any(c.get("type") == "RECORD" for c in cols) else {}
+    )
     columns = [
         {
             "name": c["name"],
-            "type": _column_type(c),
+            "type": _column_type(c, struct_types),
             "description": c.get("description", "") or "",
         }
-        for c in schema.get("columns", [])
+        for c in cols
     ]
     return {
         "name": table,
