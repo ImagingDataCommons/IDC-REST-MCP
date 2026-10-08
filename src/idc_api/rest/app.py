@@ -372,8 +372,8 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
                             "illustrative": {
                                 "summary": "Illustrative — not live values",
                                 "value": {
-                                    "idc_version": "v24",
-                                    "idc_index_data_version": "24.0.0",
+                                    "idc_version": "v25",
+                                    "idc_index_data_version": "25.0.0",
                                     "api_version": "3.0.0",
                                     "build": "a1b2c3d",
                                 },
@@ -385,7 +385,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         },
     )
     def version():
-        """Report the IDC data release served (e.g. `v24`) and the pinned idc-index-data
+        """Report the IDC data release served (e.g. `v25`) and the pinned idc-index-data
         version, plus this server's own software `api_version` (and `build` stamp, if the deploy
         set one). Use it to confirm which IDC version — and which build of this server —
         produced a given result."""
@@ -404,7 +404,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
                             "illustrative": {
                                 "summary": "Illustrative — not live values",
                                 "value": {
-                                    "idc_version": "v24",
+                                    "idc_version": "v25",
                                     "collections": 187,
                                     "analysis_results": 42,
                                     "patients": 68000,

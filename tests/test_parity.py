@@ -91,3 +91,33 @@ async def test_clinical_parity(ctx, client, parse_mcp):
     rest_rows = client.get(f"/v3/clinical/tables/{table}/rows?max_rows=5").json()
     mcp_rows = parse_mcp(await mcp.call_tool("get_clinical_table", {"table": table, "max_rows": 5}))
     assert core_rows == rest_rows == mcp_rows
+
+
+async def test_table_schema_parity_including_struct_columns(ctx, client, parse_mcp):
+    """get_table_schema agrees across core, REST, and MCP — struct columns included.
+
+    Worth pinning in both adapters rather than only in the core service: an expanded struct
+    renders as a long type string, and `collections_index.sources` embeds a double-quoted
+    identifier (`"Access" VARCHAR`). That is exactly the kind of payload a serialization
+    change could mangle on one surface and not the other.
+    """
+    for table in ("analysis_results_index", "collections_index"):
+        core = ctx.query.get_table_schema(table).model_dump(mode="json")
+        rest = client.get(f"/v3/tables/{table}").json()
+        mcp_out = parse_mcp(await mcp.call_tool("get_table_schema", {"table": table}))
+        assert core == rest == mcp_out, f"{table} schema differs across surfaces"
+
+    rest_cols = {
+        c["name"]: c["type"] for c in client.get("/v3/tables/collections_index").json()["columns"]
+    }
+    # the embedded quotes survive the round trip through JSON on the REST surface
+    assert '"Access" VARCHAR' in rest_cols["sources"]
+
+    mcp_cols = {
+        c["name"]: c["type"]
+        for c in parse_mcp(
+            await mcp.call_tool("get_table_schema", {"table": "analysis_results_index"})
+        )["columns"]
+    }
+    assert mcp_cols["provenance"].startswith("STRUCT(")
+    assert "data_contributor" in mcp_cols["provenance"]
