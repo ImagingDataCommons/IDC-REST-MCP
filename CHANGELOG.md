@@ -13,6 +13,12 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+## [3.0.0b5] — 2026-10-07
+
+Beta iteration: serves the IDC **v25** data release, and makes struct columns
+self-describing so SQL callers no longer have to guess their fields. No REST or MCP
+contract changes.
+
 ### Changed
 
 - **Serving IDC v25** (`idc-index` 0.13.0 / `idc-index-data` 25.0.0, previously v24): 179
@@ -141,7 +147,8 @@ served by a different backend and v3 lives only under `/v3/*`.
   (NCI security policy). Max-age is configurable via `IDC_API_HSTS_MAX_AGE` — default one year;
   dev/test deploys use 3600.
 
-[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b4...HEAD
+[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b5...HEAD
+[3.0.0b5]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b4...v3.0.0b5
 [3.0.0b4]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b3...v3.0.0b4
 [3.0.0b3]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b2...v3.0.0b3
 [3.0.0b2]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b1...v3.0.0b2
