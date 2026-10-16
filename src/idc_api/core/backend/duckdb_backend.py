@@ -334,6 +334,7 @@ class DuckDBBackend(QueryBackend):
     def run_user_sql(
         self,
         sql: str,
+        params: list[Any] | None = None,
         *,
         max_rows: int | None = None,
         timeout_s: float | None = None,
@@ -351,7 +352,9 @@ class DuckDBBackend(QueryBackend):
         # untrusted fragments, and `max_rows` was clamped to an int just above.
         wrapped = f"SELECT * FROM (\n{inner}\n) AS _idc_sub LIMIT {max_rows + 1}"  # nosec B608
         try:
-            cols, rows = self._execute(wrapped, None, timeout_s)
+            # Wrapping preserves the order of any `?` placeholders in `inner`, and the LIMIT
+            # is a clamped int rather than a placeholder, so binding is unaffected by it.
+            cols, rows = self._execute(wrapped, params, timeout_s)
         except duckdb.Error as exc:
             # Surface the engine's message verbatim — its "Did you mean ...?" / candidate-
             # binding hints are what let an LLM caller correct its SQL and retry. Safe to

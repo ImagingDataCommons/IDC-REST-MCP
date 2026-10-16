@@ -67,6 +67,16 @@ async def test_run_sql(server, parse_mcp):
     assert data["rows"] == [{"a": 1}]
 
 
+async def test_run_sql_params(server, parse_mcp):
+    data = parse_mcp(
+        await server.call_tool(
+            "run_sql",
+            {"sql": "SELECT ? AS uid", "params": ["1.2.840.10008"]},
+        )
+    )
+    assert data["rows"] == [{"uid": "1.2.840.10008"}]
+
+
 async def test_run_sql_error_carries_engine_hint(server):
     # A SQL mistake must return DuckDB's self-correction hints (candidate columns,
     # "Did you mean") to the agent — not the guard's generic "Internal error" fallback.
