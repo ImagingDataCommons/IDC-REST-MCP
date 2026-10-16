@@ -392,7 +392,7 @@ def build_cohort(
 
 @mcp.tool()
 @guard
-def run_sql(sql: str, max_rows: int = 100) -> dict:
+def run_sql(sql: str, params: list | None = None, max_rows: int = 100) -> dict:
     """Run a read-only SQL SELECT against the IDC index using DuckDB and return the rows.
     Use for anything build_cohort can't express (GROUP BY, joins across tables, custom
     aggregations, or filtering on columns that are not filter attributes: the attributes from
@@ -410,8 +410,12 @@ def run_sql(sql: str, max_rows: int = 100) -> dict:
     carries a `truncated` flag: if true you did NOT get every row — narrow/aggregate the query,
     or raise `max_rows` and re-check the flag (it is the only reliable 'is this complete?'
     signal). `max_rows` is clamped to a server ceiling, so there is no 'unbounded' value; for
-    bulk series use build_cohort / get_cohort_urls instead of dumping rows here."""
-    return ctx.query.run_sql(sql, max_rows=max_rows).model_dump(mode="json")
+    bulk series use build_cohort / get_cohort_urls instead of dumping rows here.
+    `params` binds values to `?` placeholders in order — e.g. sql "SELECT Modality FROM index
+    WHERE StudyInstanceUID = ?" with params ["1.2.840..."]. Prefer it to writing a value into
+    the statement whenever the value came from somewhere else (a UID a user pasted, a string
+    from a document): you do not have to quote or escape it, and it cannot change the query."""
+    return ctx.query.run_sql(sql, params, max_rows=max_rows).model_dump(mode="json")
 
 
 # --- retrieval / tools --------------------------------------------------------------------

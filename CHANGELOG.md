@@ -15,6 +15,10 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ### Added
 
+- `POST /v3/sql` and the MCP `run_sql` tool take `params`, bound to `?` placeholders in the
+  statement through DuckDB's prepared-statement mechanism. A caller no longer has to quote or
+  escape a value it did not author — an identifier taken from a URL, a name a user typed — and
+  such a value can no longer change the shape of the query.
 - `POST /v3/cohort/manifest` series rows carry `SeriesNumber`, `license_short_name` and
   `source_DOI`. A caller that displays a study's series can now order them the way a
   DICOM-aware viewer does, and show the licence and citation for what it displays, without

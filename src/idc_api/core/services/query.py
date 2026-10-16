@@ -33,8 +33,10 @@ class QueryService:
             )
         return TableSchema(**schema.table_schema(table))
 
-    def run_sql(self, sql: str, max_rows: int | None = None) -> SqlResult:
-        result = self.backend.run_user_sql(sql, max_rows=max_rows)
+    def run_sql(
+        self, sql: str, params: list | None = None, max_rows: int | None = None
+    ) -> SqlResult:
+        result = self.backend.run_user_sql(sql, params, max_rows=max_rows)
         return SqlResult(
             columns=result.columns,
             rows=result.rows,

@@ -139,6 +139,17 @@ def test_sql_ok_and_guarded(client):
     assert bad.json()["error"]["code"] == "invalid_query"
 
 
+def test_sql_params_are_bound(client):
+    r = client.post(
+        "/v3/sql",
+        json={
+            "sql": "SELECT count(*) AS n FROM index WHERE StudyInstanceUID = ?",
+            "params": ["1.2.3.4.5.6.7.8.9"],
+        },
+    ).json()
+    assert r["rows"] == [{"n": 0}]
+
+
 def test_sql_engine_error_is_a_clean_400(client):
     # DuckDB binder errors map to invalid_query with the engine's hint in the message,
     # mirroring the MCP adapter (same InvalidQueryError from the shared backend).
