@@ -22,6 +22,28 @@ def test_select_runs(backend):
     assert res.rows[0]["n"] > 1_000_000
 
 
+def test_params_bind_in_order(backend):
+    res = backend.run_user_sql("SELECT ? AS a, ? AS b", ["x", 2])
+    assert res.rows == [{"a": "x", "b": 2}]
+
+
+def test_params_bind_under_the_row_cap_wrapper(backend):
+    """The row cap wraps the caller's statement; placeholders inside it must still bind."""
+    res = backend.run_user_sql(
+        "SELECT Modality FROM index WHERE Modality = ? LIMIT 3", ["CT"], max_rows=3
+    )
+    assert res.rows and {r["Modality"] for r in res.rows} == {"CT"}
+
+
+def test_a_bound_value_stays_a_value(backend):
+    """A bound value is data, never statement text: the classic payload matches nothing
+    rather than terminating the predicate."""
+    res = backend.run_user_sql(
+        "SELECT count(*) AS n FROM index WHERE Modality = ?", ["CT' OR '1'='1"]
+    )
+    assert res.rows[0]["n"] == 0
+
+
 @pytest.mark.parametrize(
     "sql",
     [

@@ -226,12 +226,24 @@ class SqlRequest(BaseModel):
                 {
                     "sql": "SELECT Modality, count(*) AS n FROM index GROUP BY 1 ORDER BY n DESC",
                     "max_rows": 20,
-                }
+                },
+                {
+                    "sql": "SELECT SeriesInstanceUID, Modality FROM index "
+                    "WHERE StudyInstanceUID = ?",
+                    "params": ["1.3.6.1.4.1.14519.5.2.1.4219.6651.316964892168994707041803056839"],
+                },
             ]
         }
     )
 
     sql: str
+    params: list[str | int | float | bool | None] | None = Field(
+        None,
+        description="Values bound to `?` placeholders in `sql`, in order. Use these instead of "
+        "building the value into the statement text: the caller no longer has to quote or "
+        "escape it, and a value that arrives from outside the caller (an identifier from a URL, "
+        "a name typed by a user) cannot change the shape of the query.",
+    )
     max_rows: int | None = None
 
 
@@ -646,10 +658,13 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         live only in a specialized index (e.g. segmented anatomy in `seg_index`). The connection
         is sandboxed: no writes, no file or network access, one statement only. Get correct table
         and column names from `/tables` and `/tables/{table}` first; the main table is `index`,
-        and per-collection clinical tables are in the `clinical` schema. The result carries a
-        `truncated` flag — when `true` you did not get every row, so narrow or aggregate the
-        query, or raise `max_rows` (clamped to a server ceiling) and re-check."""
-        return C().query.run_sql(req.sql, max_rows=req.max_rows)
+        and per-collection clinical tables are in the `clinical` schema. Values can be bound to
+        `?` placeholders through `params` rather than written into the statement, which is worth
+        doing whenever the value did not originate with the caller — an identifier taken from a
+        URL, for instance. The result carries a `truncated` flag — when `true` you did not get
+        every row, so narrow or aggregate the query, or raise `max_rows` (clamped to a server
+        ceiling) and re-check."""
+        return C().query.run_sql(req.sql, req.params, max_rows=req.max_rows)
 
     # --- viewer / citations / licenses ---
     @app.get(
