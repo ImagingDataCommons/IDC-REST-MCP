@@ -13,6 +13,14 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`idc-index` 0.13.1 / `idc-index-data` 25.0.1** (still IDC v25): `seg_index` now includes
+  Label Map Segmentation series, which 25.0.0 omitted — 193,283 rows, up from 193,154. SQL that
+  joins `seg_index` to find segmented anatomy no longer misses them. `GET /v3/version` and
+  `get_idc_version` report `idc_index_data_version` `25.0.1`; collection, series, and size
+  totals are unchanged.
+
 ## [3.0.0b5] — 2026-10-07
 
 Beta iteration: serves the IDC **v25** data release, and makes struct columns
