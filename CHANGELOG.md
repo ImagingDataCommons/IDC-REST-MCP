@@ -13,6 +13,11 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+## [3.0.0b6] — 2026-10-15
+
+Beta iteration: picks up the `idc-index-data` 25.0.1 patch, so `seg_index` covers Label Map
+Segmentation series. Still IDC v25; no REST or MCP contract changes.
+
 ### Fixed
 
 - **`idc-index` 0.13.1 / `idc-index-data` 25.0.1** (still IDC v25): `seg_index` now includes
@@ -155,7 +160,8 @@ served by a different backend and v3 lives only under `/v3/*`.
   (NCI security policy). Max-age is configurable via `IDC_API_HSTS_MAX_AGE` — default one year;
   dev/test deploys use 3600.
 
-[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b5...HEAD
+[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b6...HEAD
+[3.0.0b6]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b5...v3.0.0b6
 [3.0.0b5]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b4...v3.0.0b5
 [3.0.0b4]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b3...v3.0.0b4
 [3.0.0b3]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b2...v3.0.0b3
