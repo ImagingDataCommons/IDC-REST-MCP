@@ -94,6 +94,18 @@ def test_cohort_manifest(client):
     assert any("rider_pilot" in cmd for cmd in m["download"]["idc_commands"])
 
 
+def test_cohort_manifest_rows_carry_ordering_and_attribution(client):
+    """A caller that displays series needs to order them and to attribute them, without
+    a second query: SeriesNumber is the DICOM ordering key, and the licence/DOI are what
+    has to be shown alongside the data."""
+    body = {"filters": {"terms": {"collection_id": ["rider_pilot"]}}, "page_size": 3}
+    series = client.post("/v3/cohort/manifest", json=body).json()["series"]
+    assert series
+    for key in ("SeriesNumber", "license_short_name", "source_DOI"):
+        assert key in series[0], key
+    assert any(row["license_short_name"] for row in series)
+
+
 def test_remap_bucket_for_gcs():
     from idc_api.core.services.manifest import remap_bucket_for_gcs
 

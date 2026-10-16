@@ -218,6 +218,9 @@ class SeriesManifestRow(BaseModel):
     aws_bucket: str | None = None
     crdc_series_uuid: str | None = None
     series_aws_url: str | None = None
+    SeriesNumber: str | None = None
+    license_short_name: str | None = None
+    source_DOI: str | None = None
 
 
 class DownloadInfo(BaseModel):

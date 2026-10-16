@@ -27,6 +27,12 @@ _ROW_COLUMNS = [
     "aws_bucket",
     "crdc_series_uuid",
     "series_aws_url",
+    # Enough for a viewer to label and attribute a series without a second query:
+    # SeriesNumber is how DICOM-aware UIs order a study's series, and the licence and
+    # DOI are what a caller displaying the data has to show alongside it.
+    "SeriesNumber",
+    "license_short_name",
+    "source_DOI",
 ]
 
 
