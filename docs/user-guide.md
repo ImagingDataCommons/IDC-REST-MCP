@@ -99,6 +99,10 @@ matching a joined condition"*) → **go straight to SQL**:
    need). **Don't guess table/column names.**
 2. **Query** — `run_sql('SELECT …')`. Select `series_aws_url` (or `SeriesInstanceUID`) if you
    want a manifest out of it.
+3. **Bind, don't interpolate** — write `?` where a value goes and pass it in `params`:
+   `{"sql": "SELECT … FROM index WHERE StudyInstanceUID = ?", "params": ["1.2.840…"]}`.
+   Worth doing for any value you did not author — an identifier out of a URL, a string a user
+   typed — since you then don't have to quote or escape it and it can't change the statement.
 
 **Both paths then:** get the data — prefer the returned `idc` commands / `manifest.txt` (direct
 from S3/GCS; see [§4](#4-getting-the-data)) — and **be a good citizen** — check `licenses`

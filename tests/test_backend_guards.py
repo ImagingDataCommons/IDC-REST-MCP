@@ -35,6 +35,13 @@ def test_params_bind_under_the_row_cap_wrapper(backend):
     assert res.rows and {r["Modality"] for r in res.rows} == {"CT"}
 
 
+def test_wrong_number_of_params_is_invalid_query(backend):
+    """A placeholder/params mismatch is the caller's mistake, so it comes back as
+    invalid_query with the engine's message — not a 500."""
+    with pytest.raises(InvalidQueryError):
+        backend.run_user_sql("SELECT ? AS a, ? AS b", ["only-one"])
+
+
 def test_a_bound_value_stays_a_value(backend):
     """A bound value is data, never statement text: the classic payload matches nothing
     rather than terminating the predicate."""

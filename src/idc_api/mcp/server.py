@@ -392,7 +392,11 @@ def build_cohort(
 
 @mcp.tool()
 @guard
-def run_sql(sql: str, params: list | None = None, max_rows: int = 100) -> dict:
+def run_sql(
+    sql: str,
+    params: list[str | int | float | bool | None] | None = None,
+    max_rows: int = 100,
+) -> dict:
     """Run a read-only SQL SELECT against the IDC index using DuckDB and return the rows.
     Use for anything build_cohort can't express (GROUP BY, joins across tables, custom
     aggregations, or filtering on columns that are not filter attributes: the attributes from
@@ -411,10 +415,8 @@ def run_sql(sql: str, params: list | None = None, max_rows: int = 100) -> dict:
     or raise `max_rows` and re-check the flag (it is the only reliable 'is this complete?'
     signal). `max_rows` is clamped to a server ceiling, so there is no 'unbounded' value; for
     bulk series use build_cohort / get_cohort_urls instead of dumping rows here.
-    `params` binds values to `?` placeholders in order — e.g. sql "SELECT Modality FROM index
-    WHERE StudyInstanceUID = ?" with params ["1.2.840..."]. Prefer it to writing a value into
-    the statement whenever the value came from somewhere else (a UID a user pasted, a string
-    from a document): you do not have to quote or escape it, and it cannot change the query."""
+    `params` binds values to `?` placeholders in order — use it for any value you did not
+    author yourself, e.g. sql "... WHERE StudyInstanceUID = ?", params ["1.2.840..."]."""
     return ctx.query.run_sql(sql, params, max_rows=max_rows).model_dump(mode="json")
 
 
@@ -538,6 +540,8 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
    archive-wide totals). Values are case-sensitive, and a zero-count cohort says so when case is
    the only reason — `Modality=['mr']` returns zeros *plus* a warning that 'MR' exists.
    For complex queries: `list_tables` → `get_table_schema('index')` → `run_sql('SELECT ...')`.
+   Pass a value you did not author yourself — a UID from a document, a name a user typed — as a
+   `?` placeholder plus `params`, rather than writing it into the statement text.
    *Explore narrow, then widen:* keep result sizes small while you're still figuring out the
    query (small `max_rows` / `limit` / `page_size`, or COUNT/GROUP BY instead of raw rows), and
    only raise the limit once you know you need the full set — large responses waste context.
