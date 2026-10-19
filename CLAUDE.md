@@ -40,6 +40,12 @@ These are the rules the design depends on. Full detail and walkthroughs are in
 7. **Errors:** raise an `IDCAPIError` subclass from services. REST maps it to
    `{status, code, message}`; the MCP `guard` decorator converts it to a clean `ToolError`.
    Never leak tracebacks.
+8. **The text manifest is an idc-index input format.** `POST /v3/cohort/manifest.txt` and
+   `get_cohort_urls` return exactly one `s3://<bucket>/<crdc_series_uuid>/*` URL per line and
+   nothing else, because `idc download` / `idc download-from-manifest` parse each line as a
+   single CSV column (an added field crashes them). Extra per-series fields belong in the JSON
+   `cohort/manifest` rows or in SQL, never on these lines. `tests/test_manifest_contract.py`
+   enforces it.
 
 Adding a capability touches five places (model → service → REST route → MCP tool → parity
 test). See the walkthrough in [dev/developer_guide.md](dev/developer_guide.md).

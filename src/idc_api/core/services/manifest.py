@@ -38,7 +38,14 @@ class ManifestService:
         self.settings = settings
 
     def _series_urls(self, where: str, params: list, limit: int) -> tuple[list[str], bool]:
-        """Return up to ``limit`` ``s3://`` series URLs plus a truncation flag."""
+        """Return up to ``limit`` ``s3://`` series URLs plus a truncation flag.
+
+        These URLs are the lines of the text manifest (``manifest_lines`` / ``manifest_text``),
+        which ``idc download`` / ``idc download-from-manifest`` read as one CSV column. Keep each
+        line a bare ``s3://<bucket>/<crdc_series_uuid>/*``: any added field crashes the CLI.
+        Extra per-series fields go in the JSON manifest rows (``SeriesManifestRow``). Enforced by
+        tests/test_manifest_contract.py.
+        """
         # `where` is compile_filters output: allow-listed columns, values bound below.
         rows = self.backend.query(
             f"SELECT series_aws_url FROM index WHERE {where} "  # nosec B608

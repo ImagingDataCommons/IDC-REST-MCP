@@ -118,6 +118,13 @@ tests/                   # pytest suite
 7. **Errors:** raise an [`IDCAPIError`](../src/idc_api/core/errors.py) subclass from services.
    REST maps it to `{status, code, message}`; the MCP `guard` decorator converts it to a clean
    `ToolError`. Never leak tracebacks.
+8. **The text manifest is an idc-index input format.** `POST /v3/cohort/manifest.txt` and
+   `get_cohort_urls` return exactly one `s3://<bucket>/<crdc_series_uuid>/*` URL per line and
+   nothing else. `idc download` and `idc download-from-manifest` read each line as a single CSV
+   column, so an added field (a series number, a licence) makes them fail with a pandas
+   `Length mismatch` error. Extra per-series fields belong in the JSON `cohort/manifest` rows or
+   in SQL. [test_manifest_contract.py](../tests/test_manifest_contract.py) checks the line format
+   and feeds the output through idc-index's own manifest parsing.
 
 ## Walkthrough: add a new capability
 
