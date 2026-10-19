@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Same name and values as idc-index's download_from_selection(analysis_results=...).
+AnalysisResultsMode = Literal["include", "exclude", "only"]
 
 # --- discovery ----------------------------------------------------------------------------
 
@@ -95,6 +98,11 @@ class AttributeValues(BaseModel):
     attribute: str
     values: list[AttributeValue]
     truncated: bool = False
+    null_count: int = Field(
+        0,
+        description="Series with no value (NULL) for this attribute. They are not listed in "
+        "`values`, and a term filter cannot select them.",
+    )
     note: str = Field("", description="Semantic caveat about this attribute, when one applies.")
 
 
@@ -158,8 +166,9 @@ class NumericRange(BaseModel):
 
 class CohortFilters(BaseModel):
     """Structured filters over the main `index` table. ``terms`` does equality/IN (OR within
-    an attribute, AND across attributes); ``ranges`` does gte/lte. Discover valid attribute
-    names with ``list_attributes`` and valid values with ``get_attribute_values``."""
+    an attribute, AND across attributes); ``ranges`` does gte/lte; ``analysis_results`` keeps
+    or drops the series that belong to analysis results. Discover valid attribute names with
+    ``list_attributes`` and valid values with ``get_attribute_values``."""
 
     model_config = ConfigDict(
         # An unrecognized key is a hard error, never silently ignored. Ignoring one meant a
@@ -182,6 +191,15 @@ class CohortFilters(BaseModel):
         examples=[{"collection_id": ["nlst"], "Modality": ["CT"]}],
     )
     ranges: dict[str, NumericRange] = Field(default_factory=dict)
+    analysis_results: AnalysisResultsMode = Field(
+        "include",
+        description="Whether series that belong to analysis results (derived data: "
+        "segmentations, annotations, radiomics) are in the cohort: 'include' keeps them "
+        "(default), 'exclude' keeps original data only, 'only' keeps analysis results only. "
+        "Analysis result series carry the collection_id of the images they analyze, so a "
+        "collection_id filter alone returns both. Applied on top of terms and ranges; not a "
+        "predicate on its own, so it does not satisfy the at-least-one-predicate rule.",
+    )
 
 
 # Shared by every response built from a filter, so the same two field names mean the same thing

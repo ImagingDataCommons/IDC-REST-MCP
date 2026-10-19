@@ -35,6 +35,12 @@ of an analysis result's series (and vice versa). Filter on whichever axis you ac
 (`analysis_results_index` lists each result's source collections in its plural `collections`
 field.)
 
+An analysis result's series carry the `collection_id` of the images they analyze, so a
+`collection_id` filter returns the collection's original images *and* any analysis results on
+them — in NLST, about two thirds of the series are analysis results (IDC v25). Original data has no
+`analysis_result_id` (it is NULL), so set the cohort filter's `analysis_results` to `exclude` for
+original data only, or `only` for analysis results only.
+
 The main queryable table is **`index`** — one row per **series**, the unit you filter, count,
 and download. IDC is large (~100+ TB total), so always check counts/size before downloading.
 
@@ -298,6 +304,9 @@ request/response example for each.
 curl -s 'localhost:8000/v3/attributes/Modality/values?limit=10'
 ```
 
+Series with no value for the attribute are not listed; `null_count` says how many there are.
+For `analysis_result_id` that is all of the original data.
+
 **Other read-only lookups (GET)** — no body, just the URL:
 
 ```bash
@@ -336,6 +345,18 @@ attributes); `ranges` is `{attribute: {"gte": x, "lte": y}}`. Bounds on numeric 
 must be numbers; bounds on `StudyDate` / `SeriesDate` must be dates as `"YYYY-MM-DD"` (DICOM
 `"YYYYMMDD"` is accepted and normalized). Any other bound is rejected with a 400 rather than
 silently matching nothing.
+
+`analysis_results` keeps or drops the series that belong to analysis results: `include`
+(default), `exclude` (original data only) or `only` (analysis results only) — the same option
+`idc download-from-selection` takes. It applies on top of `terms` and `ranges` but is not a
+predicate on its own, so a manifest still needs at least one of those; combining `exclude` with an
+`analysis_result_id` term is a 400. NLST's original images only:
+
+```bash
+curl -s localhost:8000/v3/cohort/counts \
+  -H 'content-type: application/json' \
+  -d '{"filters": {"terms": {"collection_id": ["nlst"]}, "analysis_results": "exclude"}}'
+```
 
 **Get the full manifest as plain text** (for `idc download-from-manifest` / `s5cmd`):
 
@@ -470,6 +491,11 @@ do it:
    you when your filter is a single `collection_id`:
    ```bash
    idc download nlst --download-dir ./idc-data
+   ```
+   That fetches the collection's analysis results too. With `analysis_results` set to
+   `exclude` or `only`, the payload emits the split form instead:
+   ```bash
+   idc download-from-selection --collection-id nlst --analysis-results exclude --download-dir ./idc-data
    ```
 2. **A manifest** — save the `manifest.txt` output (or any SQL result's `series_aws_url`
    column) and feed it to the CLI:

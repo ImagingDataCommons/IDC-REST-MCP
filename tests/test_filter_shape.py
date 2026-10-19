@@ -128,7 +128,7 @@ def test_empty_filter_says_it_covers_everything(client):
     no longer be mistaken for a cohort."""
     r = client.post("/v3/cohort/counts", json={"filters": {}}).json()
     assert r["series"] > _ALL_OF_IDC
-    assert r["filters_applied"] == {"terms": {}, "ranges": {}}
+    assert r["filters_applied"] == {"terms": {}, "ranges": {}, "analysis_results": "include"}
     assert any("ENTIRE IDC archive" in w for w in r["warnings"])
 
 

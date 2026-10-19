@@ -81,9 +81,17 @@ class ManifestService:
             and not (filters.ranges or {})
             and len(terms["collection_id"]) >= 1
         )
+        mode = filters.analysis_results
         if only_collection:
             for cid in terms["collection_id"]:
-                commands.append(f"idc download {cid} --download-dir ./idc-data")
+                if mode == "include":
+                    commands.append(f"idc download {cid} --download-dir ./idc-data")
+                else:
+                    # `idc download` takes everything in the collection; this one can split it.
+                    commands.append(
+                        f"idc download-from-selection --collection-id {cid} "
+                        f"--analysis-results {mode} --download-dir ./idc-data"
+                    )
         commands.append(
             "# Or save the full manifest (see the manifest endpoint/tool), then:\n"
             "idc download-from-manifest idc_manifest.txt --download-dir ./idc-data"

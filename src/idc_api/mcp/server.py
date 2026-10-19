@@ -36,7 +36,7 @@ from ..core import schema as core_schema
 from ..core import version as core_version
 from ..core.context import AppContext
 from ..core.errors import IDCAPIError, InvalidQueryError
-from ..core.models import CohortFilters, NumericRange
+from ..core.models import AnalysisResultsMode, CohortFilters, NumericRange
 from ..http_headers import HSTSMiddleware
 from ..settings import get_settings
 
@@ -206,7 +206,9 @@ def guard(fn):
     return wrapper
 
 
-def _filters(terms: dict | None, ranges: dict | None) -> CohortFilters:
+def _filters(
+    terms: dict | None, ranges: dict | None, analysis_results: str = "include"
+) -> CohortFilters:
     """Build the core filter object from loose tool arguments.
 
     The models reject unknown keys (a silently-dropped predicate would return all of IDC as if
@@ -218,11 +220,13 @@ def _filters(terms: dict | None, ranges: dict | None) -> CohortFilters:
         return CohortFilters(
             terms=terms or {},
             ranges={k: NumericRange(**v) for k, v in (ranges or {}).items()},
+            analysis_results=analysis_results,
         )
     except ValidationError as exc:
         raise InvalidQueryError(
             "Malformed filter arguments: terms is {attribute: [values]} (e.g. "
-            '{"Modality": ["MR"]}) and ranges is {attribute: {"gte": x, "lte": y}}. '
+            '{"Modality": ["MR"]}), ranges is {attribute: {"gte": x, "lte": y}}, and '
+            "analysis_results is 'include', 'exclude' or 'only'. "
             f"Details: {exc.error_count()} validation error(s): "
             + "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())
         ) from None
@@ -298,7 +302,8 @@ def get_attribute_values(attribute: str, limit: int = 50) -> dict:
     Keep `limit` small while exploring; the result carries a `truncated` flag — if true you did
     NOT get every distinct value, so raise `limit` and re-check. `limit` is capped server-side
     (so a large value returns all values for any realistic categorical attribute); a
-    `truncated=false` response means you have the complete list."""
+    `truncated=false` response means you have the complete list. Series with no value are not
+    listed; `null_count` says how many there are."""
     return ctx.discovery.get_attribute_values(attribute, limit=limit).model_dump(mode="json")
 
 
@@ -370,6 +375,7 @@ def get_clinical_table(table: str, max_rows: int = 100) -> dict:
 def build_cohort(
     terms: dict | None = None,
     ranges: dict | None = None,
+    analysis_results: AnalysisResultsMode = "include",
     page: int = 0,
     page_size: int = 5,
 ) -> dict:
@@ -383,10 +389,16 @@ def build_cohort(
     SeriesDate. Discover valid attributes with list_attributes and valid values with
     get_attribute_values. For anything these structured filters can't express, use run_sql.
 
+    `analysis_results` decides whether series from analysis results (derived segmentations,
+    annotations, radiomics) are in the cohort: 'include' (default), 'exclude' (original data
+    only) or 'only'. Derived series carry the collection_id of the images they analyze, so a
+    collection_id filter alone returns both — set 'exclude' when the user wants a collection's
+    original images.
+
     At least one filter predicate is required — an unfiltered cohort is the whole 100+ TB archive;
     use get_stats for archive-wide totals. The result echoes `counts.filters_applied` and
     `counts.warnings`: check them rather than assuming your filter landed."""
-    f = _filters(terms, ranges)
+    f = _filters(terms, ranges, analysis_results)
     return ctx.cohort.build_manifest(f, page=page, page_size=page_size).model_dump(mode="json")
 
 
@@ -428,6 +440,7 @@ def run_sql(
 def get_cohort_urls(
     terms: dict | None = None,
     ranges: dict | None = None,
+    analysis_results: AnalysisResultsMode = "include",
     source: str = "aws",
     limit: int = 100,
 ) -> dict:
@@ -437,9 +450,10 @@ def get_cohort_urls(
     ever expects s3:// lines). Returns up to `limit` URLs (increase for full manifests). These
     are anonymous public URLs — easiest is the `idc` CLI (handles either cloud); driving it
     yourself, `s5cmd --no-sign-request` works directly for source=aws, and for source=gcs add
-    `--endpoint-url https://storage.googleapis.com`. At least one filter predicate is required:
-    unfiltered, this would enumerate every series in IDC."""
-    f = _filters(terms, ranges)
+    `--endpoint-url https://storage.googleapis.com`. `terms`, `ranges` and `analysis_results`
+    filter as in build_cohort. At least one filter predicate is required: unfiltered, this would
+    enumerate every series in IDC."""
+    f = _filters(terms, ranges, analysis_results)
     urls, truncated = ctx.manifest.manifest_lines(f, source=source, limit=limit)
     return {
         "source": source,
@@ -472,24 +486,30 @@ def get_viewer_url(
 def get_citations(
     terms: dict | None = None,
     ranges: dict | None = None,
+    analysis_results: AnalysisResultsMode = "include",
     citation_format: str = "apa",
 ) -> dict:
     """Get the publications to cite for a cohort: per-dataset citations (from the cohort's
     source DOIs) in `citations`, plus the IDC paper in `idc_acknowledgment`. `citation_format`
     is one of: apa, bibtex, csl-json, turtle. When the user publishes results using IDC data,
     always include the per-dataset citations AND acknowledge IDC itself via `idc_acknowledgment`
-    (see the `recommendation` field)."""
-    f = _filters(terms, ranges)
+    (see the `recommendation` field). `terms`, `ranges` and `analysis_results` filter as in
+    build_cohort."""
+    f = _filters(terms, ranges, analysis_results)
     return ctx.citations.get_citations(f, citation_format=citation_format).model_dump(mode="json")
 
 
 @mcp.tool()
 @guard
-def get_licenses(terms: dict | None = None, ranges: dict | None = None) -> dict:
+def get_licenses(
+    terms: dict | None = None,
+    ranges: dict | None = None,
+    analysis_results: AnalysisResultsMode = "include",
+) -> dict:
     """Get the license breakdown (series count + size per license) for a cohort. Use to check
     whether data is commercial-friendly (CC BY) or non-commercial only (CC BY-NC) before the
-    user reuses it."""
-    f = _filters(terms, ranges)
+    user reuses it. `terms`, `ranges` and `analysis_results` filter as in build_cohort."""
+    f = _filters(terms, ranges, analysis_results)
     return ctx.licenses.get_licenses(f).model_dump(mode="json")
 
 
@@ -502,8 +522,10 @@ _GUIDE = """\
 Patient → Study → Series, with two *independent* grouping labels: `collection_id` (the source
 dataset, e.g. `nlst`, `tcga_luad`; a patient is in exactly one) and `analysis_result_id` (a
 derived dataset — segmentations/annotations — that can span *multiple* collections, so it is
-not nested under one). The main table is `index` (one row per *series*). IDC is large
-(~100+ TB) — always check size before suggesting a download.
+not nested under one). An analysis result's series carry the `collection_id` of the images they
+analyze, so a `collection_id` filter returns original data *and* analysis results; original
+data has a NULL `analysis_result_id`. The main table is `index` (one row per *series*). IDC is
+large (~100+ TB) — always check size before suggesting a download.
 
 **The tools form a few families that build on each other:**
 - *Discovery* (`get_stats`, `list_collections`, `get_collection`, `list_analysis_results`,
@@ -527,10 +549,15 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
 1. *Find data:* `list_collections` / `get_collection` (imaging datasets), `list_analysis_results`
    (derived annotations & segmentations).
 2. *Ground filters (do this first to avoid wrong values):* `list_attributes` → valid attributes;
-   `get_attribute_values(attribute=...)` → valid values + counts (correct casing!). If the
+   `get_attribute_values(attribute=...)` → valid values + counts (correct casing!), plus
+   `null_count` for series with no value, which a term filter cannot select. If the
    property you need is not there (e.g. what anatomy a segmentation contains), it likely lives
    in a specialized index — see *Tables for run_sql* below.
 3. *Build:* `build_cohort(terms={...}, ranges={...})` → counts, sample series, download payload.
+   `analysis_results='exclude'` keeps original data only (e.g. a collection's own images without
+   the segmentations layered on them), `'only'` keeps analysis results only; the same argument
+   works on `get_cohort_urls`, `get_citations` and `get_licenses`. It is not a predicate on its
+   own, and `'exclude'` with an `analysis_result_id` term is refused.
    *How to tell your filter was applied:* every filtered result echoes `filters_applied` (the
    predicates actually used) plus a `warnings` list. Empty `filters_applied` means nothing was
    filtered and the counts describe the ENTIRE archive — never report that as a cohort. A
