@@ -7,13 +7,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# uv for fast, reproducible installs.
-RUN pip install --no-cache-dir uv
+# uv for fast, reproducible installs. Pinned so the lock export below behaves the same every build.
+RUN pip install --no-cache-dir uv==0.12.24
 
-# Install dependencies + the package (bundled idc-index-data Parquet comes along).
-COPY pyproject.toml README.md ./
+# Install dependencies + the package (bundled idc-index-data Parquet comes along). Dependencies come
+# from uv.lock, not pyproject.toml's lower bounds, so the image ships exactly the versions CI tested
+# and pip-audit scanned, and rebuilding a commit is deterministic. --frozen fails rather than
+# re-resolving; CI's `uv sync --locked` already guarantees the lock matches pyproject.toml.
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv pip install --system .
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt \
+    && uv pip install --system -r /tmp/requirements.txt \
+    && uv pip install --system --no-deps . \
+    && rm /tmp/requirements.txt
 
 # Bake the read-only DuckDB file at build time so cold starts are instant. With no argument,
 # build_database_file includes ALL specialized indices (seg/ann/sm/ct/mr/pt, clinical, …),
