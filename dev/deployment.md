@@ -157,11 +157,13 @@ python3 dev/smoke_openapi_examples.py "$URL"
 
 ## 5. Updating for a new IDC release
 
-The image bakes whatever `idc-index-data` resolves at build time. To publish a new IDC version,
-**rebuild and redeploy** (steps 2–3). For reproducibility, pin the version in
+The image installs dependencies from [uv.lock](../uv.lock) (see [Dockerfile](../Dockerfile)), so
+it bakes exactly the `idc-index-data` the lock records and a rebuild of the same commit is
+deterministic. To move IDC versions, bump the exact `idc-index` pin in
 [pyproject.toml](../pyproject.toml) (e.g. `idc-index==0.13.1`, which pulls a specific
-`idc-index-data`) so a rebuild is deterministic; bump the pin to move IDC versions. The running
-version is always reported at `/v3/version`.
+`idc-index-data`), run `uv lock` and commit both files — CI's `uv sync --locked` fails if the lock
+is stale — then **rebuild and redeploy** (steps 2–3). The running version is always reported at
+`/v3/version`.
 
 ## Optional: remote MCP service (HTTP)
 
@@ -246,8 +248,8 @@ boundary and never cross it the wrong way:
 - **dev** is *outside* the boundary and self-contained: it builds its own image into the **dev**
   project's registry and deploys it. Nothing dev produces is ever promoted onward.
 - **test** builds the **canonical** image into the **test** project's registry and deploys it
-  (test doubles as UAT). Pinning `idc-index` in [pyproject.toml](../pyproject.toml) keeps that
-  build deterministic.
+  (test doubles as UAT). Installing from [uv.lock](../uv.lock) keeps that build
+  deterministic.
 - **prod** deploys **test's exact image by immutable `@sha256:` digest**, referencing test's
   registry directly — no rebuild, no copy — so prod runs the bytes test validated. prod's deployer
   SA and Cloud Run service agent are granted read on test's Artifact Registry (the only

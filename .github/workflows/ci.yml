@@ -46,7 +46,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install (locked deps + dev extras)
-        run: uv sync --extra dev --python ${{ matrix.python-version }}
+        run: uv sync --locked --extra dev --python ${{ matrix.python-version }}
 
       - name: Lint (ruff)
         run: uv run ruff check src tests
