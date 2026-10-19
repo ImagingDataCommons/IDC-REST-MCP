@@ -25,6 +25,8 @@ Refactors, CI, and formatting land in the git history, not here.
   matching MCP tools, and is echoed in `filters_applied`. A collection filter returns that
   collection's analysis results too, and until now there was no way to drop them short of SQL
   ([#43](https://github.com/ImagingDataCommons/IDC-REST-MCP/issues/43)).
+- The cohort download payload includes `idc download <analysis_result_id>` when the filter is only
+  `analysis_result_id` values, as it already did for `collection_id`.
 - `get_attribute_values` / `GET /v3/attributes/{attribute}/values` return `null_count`, the
   number of series with no value, which `values` does not list.
 

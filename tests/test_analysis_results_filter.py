@@ -68,6 +68,28 @@ def test_download_command_carries_the_split(client):
     ) in commands("exclude")
 
 
+def test_whole_analysis_result_has_a_one_line_command(client):
+    """`idc download <value>` resolves analysis_result_id as well as collection_id."""
+
+    def commands(terms):
+        body = {"filters": {"terms": terms}, "include_rows": False}
+        return client.post("/v3/cohort/manifest", json=body).json()["download"]["idc_commands"]
+
+    cmds = commands({"analysis_result_id": ["qiba_volct_1b"]})
+    assert cmds[0] == "idc download qiba_volct_1b --download-dir ./idc-data"
+    assert cmds[-1].startswith("# Or save the full manifest")
+
+    # Narrowed to one collection it is no longer the whole analysis result: manifest only.
+    cmds = commands({"analysis_result_id": ["qiba_volct_1b"], "collection_id": ["rider_pilot"]})
+    assert len(cmds) == 1 and cmds[0].startswith("# Save the full manifest")
+
+
+def test_values_in_download_commands_are_shell_quoted(client):
+    body = {"filters": {"terms": {"collection_id": ["x; rm -rf ~"]}}, "include_rows": False}
+    cmds = client.post("/v3/cohort/manifest", json=body).json()["download"]["idc_commands"]
+    assert cmds[0] == "idc download 'x; rm -rf ~' --download-dir ./idc-data"
+
+
 async def test_exclude_with_an_analysis_result_id_is_refused(client):
     """Always empty; a zero would read as "no such data"."""
     filters = {"terms": {"analysis_result_id": ["qiba_volct_1b"]}, "analysis_results": "exclude"}

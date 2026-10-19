@@ -4,6 +4,8 @@ download directly from the public S3/GCS buckets (``idc`` CLI / s5cmd)."""
 
 from __future__ import annotations
 
+import shlex
+
 from ..backend.base import QueryBackend
 from ..filters import compile_filters, require_filter
 from ..models import CohortFilters, DownloadInfo
@@ -74,26 +76,27 @@ class ManifestService:
         truncated = total_series > self.settings.manifest_hard_cap
 
         commands: list[str] = []
-        # Whole-collection selection -> the simplest idc command.
-        terms = filters.terms or {}
-        only_collection = (
-            list(terms.keys()) == ["collection_id"]
-            and not (filters.ranges or {})
-            and len(terms["collection_id"]) >= 1
-        )
-        mode = filters.analysis_results
-        if only_collection:
-            for cid in terms["collection_id"]:
-                if mode == "include":
-                    commands.append(f"idc download {cid} --download-dir ./idc-data")
-                else:
+        # A selection that is whole collections, or whole analysis results, has a one-line idc
+        # command (`idc download <value>` resolves either kind of id). Read from what was
+        # applied, so a predicate the compiler dropped doesn't hide or fake that shape.
+        terms = f.applied.terms
+        mode = f.applied.analysis_results
+        whole = next(iter(terms)) if len(terms) == 1 and not f.applied.ranges else None
+        if whole in ("collection_id", "analysis_result_id"):
+            for value in terms[whole]:
+                # Values come from the caller and land in a shell command; quote them.
+                value = shlex.quote(value)
+                if whole == "collection_id" and mode != "include":
                     # `idc download` takes everything in the collection; this one can split it.
                     commands.append(
-                        f"idc download-from-selection --collection-id {cid} "
+                        f"idc download-from-selection --collection-id {value} "
                         f"--analysis-results {mode} --download-dir ./idc-data"
                     )
+                else:
+                    commands.append(f"idc download {value} --download-dir ./idc-data")
         commands.append(
-            "# Or save the full manifest (see the manifest endpoint/tool), then:\n"
+            ("# Or save" if commands else "# Save")
+            + " the full manifest (see the manifest endpoint/tool), then:\n"
             "idc download-from-manifest idc_manifest.txt --download-dir ./idc-data"
         )
 

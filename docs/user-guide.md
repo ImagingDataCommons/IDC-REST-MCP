@@ -487,10 +487,13 @@ the API server (the server never moves bytes; retrieval always means URLs/manife
 the same against the hosted or a local instance, and scales to whole collections. Two ways to
 do it:
 
-1. **Whole collection** — the simplest path; `cohort/manifest`'s download payload emits it for
-   you when your filter is a single `collection_id`:
+1. **Whole collection or analysis result** — the simplest path; `cohort/manifest`'s download
+   payload emits it for you when your filter is only `collection_id` values, or only
+   `analysis_result_id` values (an analysis result is downloaded across all the collections it
+   spans):
    ```bash
    idc download nlst --download-dir ./idc-data
+   idc download nlstseg --download-dir ./idc-data
    ```
    That fetches the collection's analysis results too. With `analysis_results` set to
    `exclude` or `only`, the payload emits the split form instead:
