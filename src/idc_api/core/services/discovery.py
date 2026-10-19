@@ -154,9 +154,15 @@ class DiscoveryService:
         )
         truncated = len(res.rows) > limit
         rows = res.rows[:limit]
+        # The values above leave out NULLs; count them so that a mostly-NULL column (e.g.
+        # analysis_result_id, NULL for all original data) doesn't read as fully enumerated.
+        null_count = self.backend.query(
+            f'SELECT count(*) AS n FROM index WHERE "{attribute}" IS NULL'  # nosec B608
+        ).rows[0]["n"]
         return AttributeValues(
             attribute=attribute,
             values=[AttributeValue(value=r["value"], count=r["count"]) for r in rows],
             truncated=truncated,
+            null_count=null_count,
             note=schema.attribute_note(attribute),
         )

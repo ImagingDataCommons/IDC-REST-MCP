@@ -80,7 +80,7 @@ class _FilterRequest(BaseModel):
     @classmethod
     def _reject_bare_filter(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            stray = [k for k in ("terms", "ranges") if k in data]
+            stray = [k for k in ("terms", "ranges", "analysis_results") if k in data]
             if stray:
                 raise ValueError(
                     "the filter object goes under `filters`, e.g. "
@@ -176,7 +176,10 @@ def _filter_errors(*, requires_filter: bool = False) -> dict:
 class CountsRequest(_FilterRequest):
     model_config = ConfigDict(
         json_schema_extra={
-            "examples": [{"filters": {"terms": {"collection_id": ["nlst"], "Modality": ["CT"]}}}]
+            "examples": [
+                {"filters": {"terms": {"collection_id": ["nlst"], "Modality": ["CT"]}}},
+                {"filters": {"terms": {"collection_id": ["nlst"]}, "analysis_results": "exclude"}},
+            ]
         }
     )
 
@@ -500,7 +503,8 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         table, e.g. `Modality` or `BodyPartExamined`. Query this before filtering by an attribute
         so you use real values with the correct casing rather than guessing. The response carries
         a `truncated` flag: when `false` the list is complete; when `true`, raise `limit` (capped
-        server-side) and re-check."""
+        server-side) and re-check. Series with no value are not listed; `null_count` says how many
+        there are."""
         return C().discovery.get_attribute_values(attribute, limit=limit)
 
     # --- schema discovery ---
@@ -590,7 +594,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         and total `size_TB` — without the sample rows or download payload. Use it as a fast size
         check before building a full manifest or downloading. `filters.terms` is
         `{attribute: [values]}` for equality/IN; `filters.ranges` is
-        `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges.
+        `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges; `filters.analysis_results`
+        is `include` (default), `exclude` (original data only) or `only` (analysis results only).
+        Analysis result series carry the `collection_id` of the images they analyze, so a
+        `collection_id` filter alone returns both.
 
         The response echoes `filters_applied` (the predicates actually used) and `warnings`.
         **Check them rather than assuming your filter landed**: an empty `filters_applied` means
@@ -610,9 +617,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         studies, series, instances, size_TB), a page of matching series, and a download payload
         (idc commands plus a manifest preview). `filters.terms` is `{attribute: [values]}` for
         equality/IN (e.g. `{"Modality": ["MR"]}`); `filters.ranges` is
-        `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges. Discover valid attributes
-        via `/attributes` and valid values via `/attributes/{attribute}/values`. For anything
-        these structured filters can't express, use `/sql`.
+        `{attribute: {"gte": x, "lte": y}}` for numeric or date ranges; `filters.analysis_results`
+        set to `exclude` keeps original data only, `only` keeps analysis results only. Discover
+        valid attributes via `/attributes` and valid values via `/attributes/{attribute}/values`.
+        For anything these structured filters can't express, use `/sql`.
 
         **At least one filter predicate is required** — unfiltered, this is a download payload for
         the entire archive; use `/stats` for archive-wide totals. `counts.filters_applied` echoes

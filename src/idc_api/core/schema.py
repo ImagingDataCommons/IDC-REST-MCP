@@ -241,7 +241,16 @@ def table_schema(table: str) -> dict:
 
 FILTERABLE_ATTRIBUTES: list[dict] = [
     {"name": "collection_id", "kind": "term", "categorical": True},
-    {"name": "analysis_result_id", "kind": "term", "categorical": True},
+    {
+        "name": "analysis_result_id",
+        "kind": "term",
+        "categorical": True,
+        "note": (
+            "A term filter can only select analysis results by id. To keep original data only "
+            "(analysis_result_id NULL), or analysis results only, set the cohort filter's "
+            "analysis_results to 'exclude' or 'only'."
+        ),
+    },
     {"name": "PatientID", "kind": "term", "categorical": False},
     {"name": "StudyInstanceUID", "kind": "term", "categorical": False},
     {"name": "SeriesInstanceUID", "kind": "term", "categorical": False},

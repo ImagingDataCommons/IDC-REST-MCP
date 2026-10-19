@@ -19,6 +19,16 @@ Refactors, CI, and formatting land in the git history, not here.
   statement through DuckDB's prepared-statement mechanism. A caller no longer has to quote or
   escape a value it did not author — an identifier taken from a URL, a name a user typed — and
   such a value can no longer change the shape of the query.
+- Cohort filters take `analysis_results`: `include` (default), `exclude` (original data only)
+  or `only` (analysis results only), as in idc-index's `download_from_selection`. It applies to
+  `cohort/counts`, `cohort/manifest`, `cohort/manifest.txt`, `citations`, `licenses` and the
+  matching MCP tools, and is echoed in `filters_applied`. A collection filter returns that
+  collection's analysis results too, and until now there was no way to drop them short of SQL
+  ([#43](https://github.com/ImagingDataCommons/IDC-REST-MCP/issues/43)).
+- The cohort download payload includes `idc download <analysis_result_id>` when the filter is only
+  `analysis_result_id` values, as it already did for `collection_id`.
+- `get_attribute_values` / `GET /v3/attributes/{attribute}/values` return `null_count`, the
+  number of series with no value, which `values` does not list.
 
 ### Changed
 

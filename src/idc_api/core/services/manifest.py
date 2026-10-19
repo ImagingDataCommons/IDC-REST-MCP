@@ -4,6 +4,8 @@ download directly from the public S3/GCS buckets (``idc`` CLI / s5cmd)."""
 
 from __future__ import annotations
 
+import shlex
+
 from ..backend.base import QueryBackend
 from ..filters import compile_filters, require_filter
 from ..models import CohortFilters, DownloadInfo
@@ -36,7 +38,14 @@ class ManifestService:
         self.settings = settings
 
     def _series_urls(self, where: str, params: list, limit: int) -> tuple[list[str], bool]:
-        """Return up to ``limit`` ``s3://`` series URLs plus a truncation flag."""
+        """Return up to ``limit`` ``s3://`` series URLs plus a truncation flag.
+
+        These URLs are the lines of the text manifest (``manifest_lines`` / ``manifest_text``),
+        which ``idc download`` / ``idc download-from-manifest`` read as one CSV column. Keep each
+        line a bare ``s3://<bucket>/<crdc_series_uuid>/*``: any added field crashes the CLI.
+        Extra per-series fields go in the JSON manifest rows (``SeriesManifestRow``). Enforced by
+        tests/test_manifest_contract.py.
+        """
         # `where` is compile_filters output: allow-listed columns, values bound below.
         rows = self.backend.query(
             f"SELECT series_aws_url FROM index WHERE {where} "  # nosec B608
@@ -74,18 +83,27 @@ class ManifestService:
         truncated = total_series > self.settings.manifest_hard_cap
 
         commands: list[str] = []
-        # Whole-collection selection -> the simplest idc command.
-        terms = filters.terms or {}
-        only_collection = (
-            list(terms.keys()) == ["collection_id"]
-            and not (filters.ranges or {})
-            and len(terms["collection_id"]) >= 1
-        )
-        if only_collection:
-            for cid in terms["collection_id"]:
-                commands.append(f"idc download {cid} --download-dir ./idc-data")
+        # A selection that is whole collections, or whole analysis results, has a one-line idc
+        # command (`idc download <value>` resolves either kind of id). Read from what was
+        # applied, so a predicate the compiler dropped doesn't hide or fake that shape.
+        terms = f.applied.terms
+        mode = f.applied.analysis_results
+        whole = next(iter(terms)) if len(terms) == 1 and not f.applied.ranges else None
+        if whole in ("collection_id", "analysis_result_id"):
+            for value in terms[whole]:
+                # Values come from the caller and land in a shell command; quote them.
+                value = shlex.quote(value)
+                if whole == "collection_id" and mode != "include":
+                    # `idc download` takes everything in the collection; this one can split it.
+                    commands.append(
+                        f"idc download-from-selection --collection-id {value} "
+                        f"--analysis-results {mode} --download-dir ./idc-data"
+                    )
+                else:
+                    commands.append(f"idc download {value} --download-dir ./idc-data")
         commands.append(
-            "# Or save the full manifest (see the manifest endpoint/tool), then:\n"
+            ("# Or save" if commands else "# Save")
+            + " the full manifest (see the manifest endpoint/tool), then:\n"
             "idc download-from-manifest idc_manifest.txt --download-dir ./idc-data"
         )
 

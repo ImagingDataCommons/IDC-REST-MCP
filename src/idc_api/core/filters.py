@@ -99,13 +99,26 @@ def compile_filters(filters: CohortFilters) -> CompiledFilters:
             params.append(rng.lte)
         applied_ranges[attr] = rng
 
+    mode = filters.analysis_results
+    if mode == "exclude" and "analysis_result_id" in applied_terms:
+        # Always empty. Refused rather than answered with a zero that reads as "no such data".
+        raise InvalidQueryError(
+            "analysis_results='exclude' keeps original data only, so it cannot be combined with "
+            "an analysis_result_id term, which selects analysis results. Drop one of the two."
+        )
+    # Analysis result series are the ones with an analysis_result_id; original data has NULL.
+    if mode == "exclude":
+        clauses.append('"analysis_result_id" IS NULL')
+    elif mode == "only":
+        clauses.append('"analysis_result_id" IS NOT NULL')
+
     if not clauses:
         warnings.append(UNFILTERED_WARNING)
 
     return CompiledFilters(
         where=" AND ".join(clauses) if clauses else "TRUE",
         params=params,
-        applied=CohortFilters(terms=applied_terms, ranges=applied_ranges),
+        applied=CohortFilters(terms=applied_terms, ranges=applied_ranges, analysis_results=mode),
         warnings=warnings,
     )
 
@@ -164,10 +177,17 @@ def require_filter(compiled: CompiledFilters, action: str) -> None:
     not: an unfiltered manifest is a download payload for the whole archive, which no caller
     means to ask for. Those raise instead, with the dropped-predicate warnings attached so the
     caller can see *why* their filter came out empty.
+
+    ``analysis_results`` alone does not count: either side of that split is roughly half the
+    archive (about half a million series).
     """
     if compiled.applied.terms or compiled.applied.ranges:
         return
     dropped = [w for w in compiled.warnings if w != UNFILTERED_WARNING]
+    if compiled.applied.analysis_results != "include":
+        dropped.append(
+            "analysis_results on its own is not a predicate: either side of it is about half of IDC."
+        )
     raise InvalidQueryError(
         f"At least one filter predicate is required to {action}: unfiltered, that is every series "
         "in IDC (100+ TB). Use the stats surface for archive-wide totals, or cohort counts to "
