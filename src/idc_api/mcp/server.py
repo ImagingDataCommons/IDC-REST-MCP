@@ -37,6 +37,7 @@ from ..core import version as core_version
 from ..core.context import AppContext
 from ..core.errors import IDCAPIError, InvalidQueryError
 from ..core.models import AnalysisResultsMode, CohortFilters, NumericRange
+from ..core.services.releases import parse_idc_version
 from ..http_headers import HSTSMiddleware
 from ..settings import get_settings
 
@@ -249,9 +250,8 @@ def get_idc_version() -> dict:
     server's own software version (`api_version`, and `build` if the deploy stamped one). Call
     this to confirm which IDC version your answers are based on — and which build of the server
     produced them. The server serves one release but is NOT limited to it: every series records
-    the release it first appeared in and was last revised in, and superseded/removed series are
-    kept in `prior_versions_index`, so past releases and what changed between them are
-    queryable — use get_release_changes for "what's new in vN"."""
+    the release it first appeared in and was last revised in, so past releases and what changed
+    between them are queryable — use get_release_changes for "what's new in vN"."""
     return ctx.discovery.version().model_dump(mode="json")
 
 
@@ -265,16 +265,17 @@ def get_stats() -> dict:
 
 @mcp.tool()
 @guard
-def get_release_changes(version: int | None = None) -> dict:
+def get_release_changes(version: int | str | None = None) -> dict:
     """What's new in an IDC data release — what changed since the previous version. Returns the
     series added, revised, and removed (with size in TB and patients affected), the collections
     that were newly added, updated, or removed, and the analysis results that gained series.
-    `version` is the release number (e.g. 24 for v24); omit it for the release this server
-    serves. Call this whenever the user asks what is new, added, changed, updated, or removed in
-    IDC, in a given release, or since a version — do not conclude that history is unavailable
-    because the server serves a single release. For per-series detail beyond this summary, use
-    run_sql on `index` (series_init_idc_version / series_revised_idc_version) and
-    `prior_versions_index` (min_idc_version / max_idc_version)."""
+    `version` is the release, as 24 or "v24" (the form get_idc_version and `previous_version`
+    use); omit it for the release this server serves. Call this whenever the user asks what is
+    new, added, changed, updated, or removed in IDC, in a given release, or since a version — do
+    not conclude that history is unavailable because the server serves a single release, and do
+    not work it out from `prior_versions_index` row ranges (a row also ends when a series only
+    moved storage bucket). Surface any `warnings`. For per-series detail beyond this summary,
+    use run_sql on `index` (series_init_idc_version / series_revised_idc_version)."""
     return ctx.releases.release_changes(version).model_dump(mode="json")
 
 
@@ -539,14 +540,14 @@ def get_licenses(
 @mcp.prompt()
 def whats_new(version: str = "") -> str:
     """Summarize what is new in an IDC data release (the latest one by default)."""
-    n = version.strip().lower().removeprefix("v")
+    try:
+        n = parse_idc_version(version) if version.strip() else None
+    except InvalidQueryError:
+        n = None  # fall back to the served release rather than paste the raw text into a call
     target, call = (
         (f"IDC release v{n}", f"get_release_changes(version={n})")
-        if n
-        else (
-            "the latest IDC release",
-            "get_release_changes()",
-        )
+        if n is not None
+        else ("the latest IDC release", "get_release_changes()")
     )
     return (
         f"Summarize what changed in {target}. Call {call}, then report: the release date; the "
@@ -671,14 +672,14 @@ These tables are present only when `clinical_index` is included in the build.
 
 **Release history.** The server serves one IDC release, but that release carries the history of
 all earlier ones. On `index`, `series_init_idc_version` is the release a series first appeared in
-and `series_revised_idc_version` the release its current content dates from.
-`prior_versions_index` holds every superseded or removed *version* of a series (one row per old
-`crdc_series_uuid`, valid from `min_idc_version` through `max_idc_version`); a SeriesInstanceUID
-also in `index` was revised, one that isn't was removed. `version_metadata_index` dates each
-release. `get_release_changes(version=N)` diffs release N against N-1 from these tables — series
-added / revised / removed, new and removed collections, per-collection size — so start there for
-"what's new in vN"; drop to `run_sql` on those columns for per-series detail (e.g. "which of my
-cohort's series changed since v20": `series_revised_idc_version > 20`).
+and `series_revised_idc_version` the release its current content dates from; `version_metadata_index`
+dates each release. For "what's new in vN", call `get_release_changes(version=N)`: it diffs
+release N against N-1 — series added / revised / removed, new and removed collections,
+per-collection size. For per-series detail use `run_sql` on the two `index` columns (e.g. "which
+of my cohort's series changed since v20": `series_revised_idc_version > 20`).
+`prior_versions_index` lists the series versions no longer served (for resolving old manifests).
+It is not a record of what is new: it never lists added series, and a row also ends when a
+version only moved storage bucket, so do not count changes from its `max_idc_version`.
 """
 
 

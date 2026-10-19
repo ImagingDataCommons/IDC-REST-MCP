@@ -11,9 +11,7 @@ from idc_api.mcp.server import mcp
 
 
 def _current(ctx) -> int:
-    return int(
-        ctx.backend.query("SELECT max(idc_version) v FROM version_metadata_index").rows[0]["v"]
-    )
+    return int(ctx.discovery.version().idc_version.removeprefix("v"))
 
 
 def test_latest_release_is_default_and_self_consistent(ctx):
@@ -53,12 +51,81 @@ def test_first_release_has_no_predecessor(ctx):
     assert all(c.status == "new" for c in rc.collections)
 
 
+def test_early_releases_warn_that_v1_is_partly_recorded(ctx):
+    assert ctx.releases.release_changes(1).warnings
+    assert ctx.releases.release_changes(2).warnings
+    assert ctx.releases.release_changes(3).warnings == []
+
+
+# --- past releases: the cases the served release cannot exercise ---------------------------
+
+
+def test_bucket_moves_are_not_revisions(ctx):
+    """prior_versions_index starts a new row when a version only changed storage bucket, which
+    v19→v20 did for thousands of series. Revised means a different crdc_series_uuid."""
+    rc = ctx.releases.release_changes(20)
+    # Independent formulation: series in both releases whose sets of version ids differ.
+    expected = ctx.backend.query(
+        """
+        WITH v AS (
+          SELECT SeriesInstanceUID s, crdc_series_uuid u, series_revised_idc_version lo,
+                 ? AS hi FROM index
+          UNION ALL
+          SELECT SeriesInstanceUID, crdc_series_uuid, min_idc_version, max_idc_version
+          FROM prior_versions_index
+        ),
+        c AS (SELECT s, list(DISTINCT u) us FROM v WHERE lo <= 20 AND hi >= 20 GROUP BY s),
+        p AS (SELECT s, list(DISTINCT u) us FROM v WHERE lo <= 19 AND hi >= 19 GROUP BY s)
+        SELECT count(*) n FROM c JOIN p USING (s) WHERE c.us <> p.us
+        """,
+        [_current(ctx)],
+    ).rows[0]["n"]
+    assert rc.series_revised == expected
+    rows_ending = ctx.backend.query(
+        "SELECT count(DISTINCT SeriesInstanceUID) n FROM prior_versions_index "
+        "WHERE max_idc_version = 19 AND min_idc_version <= 19 "
+        "AND SeriesInstanceUID IN (SELECT SeriesInstanceUID FROM index)"
+    ).rows[0]["n"]
+    assert rc.series_revised < rows_ending  # the naive reading overcounts
+
+
+def test_collection_move_is_removed_then_new(ctx):
+    """At v5 the 43 `apollo` series moved to `apollo_5_lscc`."""
+    rc = ctx.releases.release_changes(5)
+    assert "apollo_5_lscc" in rc.new_collections
+    assert "apollo" in rc.removed_collections
+    by_id = {c.collection_id: c for c in rc.collections}
+    assert by_id["apollo"].series_removed == by_id["apollo_5_lscc"].series_added == 43
+    # In the totals the move is neither an addition to IDC nor a removal from it.
+    assert rc.series_added == sum(c.series_added for c in rc.collections) - 43
+    assert rc.series_removed == sum(c.series_removed for c in rc.collections) - 43
+
+
+def test_analysis_results_are_consistent_with_collections(ctx):
+    for v in (_current(ctx), 20):
+        rc = ctx.releases.release_changes(v)
+        for a in rc.analysis_results:
+            assert a.series_added + a.series_revised + a.series_removed > 0
+            if a.is_new:
+                assert a.series_revised == a.series_removed == 0
+        assert sum(a.series_added for a in rc.analysis_results) <= rc.series_added
+
+
+def test_patients_are_counted_per_collection(ctx):
+    rc = ctx.releases.release_changes(_current(ctx))
+    assert rc.patients_affected <= sum(c.patients_affected for c in rc.collections)
+
+
+def test_results_are_memoized(ctx):
+    assert ctx.releases.release_changes(20) is ctx.releases.release_changes("v20")
+
+
 def test_version_accepts_v_prefix(ctx):
     cur = _current(ctx)
     assert ctx.releases.release_changes(f"v{cur}") == ctx.releases.release_changes(cur)
 
 
-@pytest.mark.parametrize("bad", [0, 9999, "latest", "v"])
+@pytest.mark.parametrize("bad", [0, 9999, "latest", "v", "²", "v-1"])
 def test_unknown_version_is_a_clean_error(ctx, bad):
     with pytest.raises(InvalidQueryError):
         ctx.releases.release_changes(bad)
@@ -72,8 +139,18 @@ async def test_release_changes_parity(ctx, client, parse_mcp):
     assert core == rest == mcp_out
 
 
-def test_rest_unknown_version_is_400(client):
-    r = client.get("/v3/releases/changes", params={"version": 9999})
+async def test_both_adapters_accept_the_version_they_return(ctx, client, parse_mcp):
+    """previous_version / get_idc_version use "v23"; passing it back must work."""
+    prev = ctx.releases.release_changes().previous_version
+    rest = client.get("/v3/releases/changes", params={"version": prev})
+    assert rest.status_code == 200 and rest.json()["idc_version"] == prev
+    mcp_out = parse_mcp(await mcp.call_tool("get_release_changes", {"version": prev}))
+    assert mcp_out["idc_version"] == prev
+
+
+@pytest.mark.parametrize("bad", [9999, "latest", "²"])
+def test_rest_bad_version_is_400(client, bad):
+    r = client.get("/v3/releases/changes", params={"version": bad})
     assert r.status_code == 400
 
 
@@ -94,13 +171,18 @@ async def test_whats_new_prompt():
     assert "whats_new" in prompts
     msg = await mcp.get_prompt("whats_new", {"version": "v24"})
     assert "get_release_changes(version=24)" in msg.messages[0].content.text
+    # Unparseable input falls back to the served release instead of reaching the call.
+    msg = await mcp.get_prompt("whats_new", {"version": "latest"})
+    assert "get_release_changes()" in msg.messages[0].content.text
 
 
 def test_prior_versions_index_is_documented():
     sch = schema.table_schema("prior_versions_index")
-    assert sch["description"]
+    # It must steer callers away from reading it as a list of what is new.
+    assert "not a record of what is new" in sch["description"]
     cols = {c["name"]: c["description"] for c in sch["columns"]}
-    assert cols["min_idc_version"] and cols["max_idc_version"]
+    assert all(cols.values()), [n for n, d in cols.items() if not d]
+    assert "bucket" in cols["max_idc_version"] and "bucket" in cols["crdc_series_uuid"]
 
 
 def test_notable_columns_exist_in_schema():

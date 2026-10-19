@@ -41,10 +41,11 @@ class Stats(BaseModel):
 
 class CollectionChange(BaseModel):
     collection_id: str
-    status: str = Field(
+    status: Literal["new", "removed", "updated"] = Field(
         ...,
         description="'new' (no series in the previous release), 'removed' (no series in this "
-        "release), or 'updated' (present in both, with series added/revised/removed).",
+        "release), or 'updated' (present in both, with series added/revised/removed). A series "
+        "that moved to another collection counts as removed from one and added to the other.",
     )
     series_added: int
     series_revised: int
@@ -59,8 +60,12 @@ class CollectionChange(BaseModel):
 
 class AnalysisResultChange(BaseModel):
     analysis_result_id: str
-    is_new: bool = Field(..., description="True if this analysis result first appeared here.")
+    is_new: bool = Field(
+        ..., description="True if this analysis result had no series in the previous release."
+    )
     series_added: int
+    series_revised: int
+    series_removed: int
 
 
 class ReleaseChanges(BaseModel):
@@ -71,13 +76,20 @@ class ReleaseChanges(BaseModel):
     previous_version: str | None = Field(None, description="The release compared against.")
     previous_release_date: str | None = None
     current_version: str = Field(..., description="The release this server serves.")
-    series_added: int
-    series_revised: int
-    series_removed: int
+    series_added: int = Field(..., description="Series new to IDC in this release.")
+    series_revised: int = Field(
+        ...,
+        description="Series in both releases whose content changed (a new crdc_series_uuid).",
+    )
+    series_removed: int = Field(..., description="Series IDC no longer serves in this release.")
     size_TB_added: float
     size_TB_revised: float
     size_TB_removed: float
-    patients_affected: int
+    patients_affected: int = Field(
+        ...,
+        description="Distinct patients (PatientID within a collection) with at least one added, "
+        "revised, or removed series.",
+    )
     new_collections: list[str] = Field(
         default_factory=list, description="Collections that first appeared in this release."
     )
@@ -89,9 +101,14 @@ class ReleaseChanges(BaseModel):
     )
     analysis_results: list[AnalysisResultChange] = Field(
         default_factory=list,
-        description="Analysis results that gained series in this release. Counted from series "
-        "still present in the current release, so for an older release it omits series that were "
-        "later removed.",
+        description="Analysis results with series added, revised, or removed in this release. A "
+        "series no longer served today cannot be attributed to its analysis result, so for an "
+        "older release these counts omit series that were later removed.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Caveats about how complete this release's numbers are. Empty when the "
+        "served data records the release in full.",
     )
     note: str = ""
 

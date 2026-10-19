@@ -154,7 +154,7 @@ per-collection, keyed by `collection_id`).
 | `index` | one row per **series** — the main table |
 | `collections_index` | one row per collection (curated metadata) |
 | `analysis_results_index` | one row per analysis result |
-| `version_metadata_index` / `prior_versions_index` | IDC release dates / superseded or removed series versions (`min_idc_version`–`max_idc_version`) — see [Release history](#release-history) |
+| `version_metadata_index` / `prior_versions_index` | IDC release dates / series versions no longer served (not a list of what is new) — see [Release history](#release-history) |
 | `seg_index`, `ann_index`, `ann_group_index`, `rtstruct_index` | segmentations / annotations / RT structures: **what was segmented** (`SegmentedPropertyType_CodeMeanings` — `BodyPartExamined` reflects the source acquisition, not this) and the **reference** to the image series they derive from (`segmented_SeriesInstanceUID` / `referenced_SeriesInstanceUID`) |
 | `ct_index`, `mr_index`, `pt_index` | per-modality acquisition parameters (slice thickness, kVp, TE/TR, injected dose…) |
 | `sm_index`, `sm_instance_index` | slide-microscopy (pathology) series / instance metadata |
@@ -242,26 +242,32 @@ WHERE i.collection_id = 'nlst' AND i.Modality = 'CT'
 
 The server serves **one** IDC data release (see `GET /v3/version` / `get_idc_version`), but that
 release carries the history of every earlier one, so "what's new in v24" or "what changed since
-v20" are answerable without external release notes:
+v20" are answerable without external release notes.
 
-- On `index`, `series_init_idc_version` is the release a series first appeared in, and
-  `series_revised_idc_version` the release its current content dates from.
-- `prior_versions_index` holds every **superseded or removed version** of a series — one row per
-  old `crdc_series_uuid`, valid from `min_idc_version` through `max_idc_version`. If its
-  `SeriesInstanceUID` is still in `index` the series was revised; otherwise it was removed.
-- `version_metadata_index` dates each release.
+`GET /v3/releases/changes?version=N` / `get_release_changes(version=N)` diffs release N against
+N-1: series **added / revised / removed** (with TB and patients affected), collections that are
+**new / updated / removed**, and the analysis results with changed series. `version` takes `24` or
+`v24`; omit it for the served release. A series that moved to another collection counts as removed
+from one and added to the other in the per-collection rows, but not in the totals. Results for v1
+and v2 carry a `warnings` entry: series versions served in v1 and replaced later were never
+recorded, so those two diffs are incomplete.
 
-`GET /v3/releases/changes?version=N` / `get_release_changes(version=N)` does the diff of release
-N against N-1 for you: series **added / revised / removed** (with TB and patients affected),
-collections that are **new / updated / removed**, and the analysis results that gained series.
-Omit `version` for the served release. For per-series detail, query the columns above with SQL —
-e.g. the series of a collection that changed since v20:
+For per-series detail, query `index` with SQL: `series_init_idc_version` is the release a series
+first appeared in, and `series_revised_idc_version` the release its current content dates from.
+For example, the series of a collection that changed since v20:
 
 ```sql
 SELECT SeriesInstanceUID, series_init_idc_version, series_revised_idc_version
 FROM index
 WHERE collection_id = 'nlst' AND series_revised_idc_version > 20
 ```
+
+`prior_versions_index` lists the series versions IDC no longer serves, mainly so manifests from
+earlier releases can still be resolved. It is **not** a record of what is new: it never lists
+added series, and a row also ends when a version only moved storage bucket, so counting rows by
+`max_idc_version` overstates revisions (for v20 it would count 11,928, of which 11,338 were
+bucket moves).
+`get_release_changes` accounts for this.
 
 The diff tells you *what* changed, not *why*; for the narrative, see the
 [IDC release notes](https://learn.canceridc.dev/data/data-release-notes).

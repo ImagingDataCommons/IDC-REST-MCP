@@ -448,8 +448,10 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         summary="What changed in a release",
     )
     def release_changes(
-        version: int | None = Query(
-            None, ge=1, description="IDC release number, e.g. 24; omit for the served release."
+        version: str | None = Query(
+            None,
+            description="IDC release, as 24 or v24; omit for the served release.",
+            examples=["v24"],
         ),
     ):
         """What's new in an IDC data release relative to the previous one: series added,
