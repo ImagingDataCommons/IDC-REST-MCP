@@ -13,6 +13,13 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+### Added
+
+- `POST /v3/sql` and the MCP `run_sql` tool take `params`, bound to `?` placeholders in the
+  statement through DuckDB's prepared-statement mechanism. A caller no longer has to quote or
+  escape a value it did not author — an identifier taken from a URL, a name a user typed — and
+  such a value can no longer change the shape of the query.
+
 ## [3.0.0b6] — 2026-10-15
 
 Beta iteration: picks up the `idc-index-data` 25.0.1 patch, so `seg_index` covers Label Map

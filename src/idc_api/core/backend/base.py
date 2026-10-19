@@ -58,6 +58,7 @@ class QueryBackend(abc.ABC):
     def run_user_sql(
         self,
         sql: str,
+        params: list[Any] | None = None,
         *,
         max_rows: int | None = None,
         timeout_s: float | None = None,
@@ -66,6 +67,12 @@ class QueryBackend(abc.ABC):
 
         Implementations must reject anything other than a single read-only SELECT/WITH and
         enforce a row cap + statement timeout.
+
+        ``params`` bind the statement's placeholders through the engine's prepared-statement
+        mechanism, exactly as in :meth:`query`. The sandbox is what makes arbitrary SQL safe
+        to run here, but a caller that interpolates a value of its own into ``sql`` -- a UID
+        from a URL, say -- still has to get the quoting right every time; placeholders remove
+        that obligation.
         """
 
     def close(self) -> None:  # pragma: no cover - trivial default
