@@ -11,12 +11,12 @@ keywords = ["IDC", "DICOM", "cancer imaging", "MCP", "REST", "idc-index"]
 dependencies = [
     # Query engine + data.
     # idc-index is pinned EXACTLY, unlike every other dependency here, because it transitively
-    # pins idc-index-data (0.13.1 -> 25.0.1) — which *is* the IDC data release this server
+    # pins idc-index-data (0.13.3 -> 25.0.4) — which *is* the IDC data release this server
     # advertises at /v3/version and documents in the changelog. The image installs from uv.lock,
     # so the lock alone already fixes it; the exact pin keeps the served IDC release explicit
     # here and stops a routine `uv lock --upgrade` from silently moving it. Bump this pin (then
     # `uv lock`) to move IDC versions — see dev/deployment.md § Updating for a new IDC release.
-    "idc-index==0.13.1",
+    "idc-index==0.13.3",
     "duckdb>=1.5.5",
     "pyarrow>=25.0.0",
     # Shared models / settings
