@@ -20,6 +20,24 @@ Refactors, CI, and formatting land in the git history, not here.
   escape a value it did not author — an identifier taken from a URL, a name a user typed — and
   such a value can no longer change the shape of the query.
 
+### Changed
+
+- **`idc-index` 0.13.3 / `idc-index-data` 25.0.4** (still IDC v25): a missing value in
+  `index.PatientAge`, `index.SeriesDescription`, `pt_index.SeriesType`,
+  `collections_index.supporting_data` or `clinical_index.column_label` is now NULL, never an empty
+  string, so SQL that tested `= ''` must test `IS NULL`. `volume_geometry_index` adds
+  `origin_patient`, `ImageOrientationPatient` and `slice_spacing_mm`. `GET /v3/version` and
+  `get_idc_version` report `idc_index_data_version` `25.0.4`; collection, series, and size totals
+  are unchanged.
+
+### Fixed
+
+- `get_table_schema` and `list_attributes` describe 19 columns that had no description, among
+  them `SeriesInstanceUID` in `index`, `sm_index` and `ann_index`, and `Rows`/`Columns` in
+  `ct_index`, `mr_index` and `pt_index`. `analysis_result_id` is described as NULL for original
+  data rather than as "not empty", and `seg_index.segmented_SeriesInstanceUID` says when it is
+  NULL.
+
 ## [3.0.0b6] — 2026-10-15
 
 Beta iteration: picks up the `idc-index-data` 25.0.1 patch, so `seg_index` covers Label Map
