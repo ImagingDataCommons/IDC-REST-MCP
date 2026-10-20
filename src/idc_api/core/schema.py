@@ -193,53 +193,6 @@ TABLE_DESCRIPTION_OVERRIDES: dict[str, str] = {
     ),
 }
 
-# Fill-ins for upstream descriptions that are empty, applied only where upstream has no text, so
-# the upstream description takes over on the pin bump that brings it. The prior_versions_index
-# text matches what idc-index-data adds for its next release (upstream ships it empty through
-# 25.0.4), with the main index named `index` as this server's SQL calls it.
-TABLE_DESCRIPTION_FILLINS: dict[str, str] = {
-    "prior_versions_index": (
-        "Versions of IDC series that an earlier IDC release served and the current release no "
-        "longer serves, each with the range of releases that served it. A version is identified "
-        "by crdc_series_uuid. A SeriesInstanceUID that is also in `index` was revised (its "
-        "current version is in `index`); one that is not was removed from IDC. A version can "
-        "span more than one row, since a new row starts whenever its storage bucket changed "
-        "between releases, even though its content did not. This table is not a record of what "
-        "is new in a release: it never lists added series, and a row ending at a release does "
-        "not mean that release changed the series. To find the series added or revised in a "
-        "release, use series_init_idc_version and series_revised_idc_version in `index`, or "
-        "get_release_changes for a whole release. The main use of this table is to resolve and "
-        "download series listed in manifests made from earlier releases."
-    ),
-}
-
-COLUMN_DESCRIPTION_FILLINS: dict[str, dict[str, str]] = {
-    "prior_versions_index": {
-        "collection_id": "unique identifier of the collection the series belonged to",
-        "PatientID": "identifier of the patient within the collection (DICOM attribute PatientID)",
-        "SeriesInstanceUID": "DICOM SeriesInstanceUID of the series; the same for every version "
-        "of a series, so it also matches the current version in `index` if the series was "
-        "revised rather than removed",
-        "StudyInstanceUID": "DICOM StudyInstanceUID of the study the series belongs to",
-        "Modality": "DICOM Modality of the series",
-        "gcs_bucket": "name of the Google Cloud Storage bucket that held this version of the "
-        "series in the releases min_idc_version through max_idc_version",
-        "crdc_series_uuid": "unique identifier of this version of the series within IDC; "
-        "changes whenever the content of the series changes, so it never matches a "
-        "crdc_series_uuid in `index`. The same value on several rows is one version that moved "
-        "between storage buckets",
-        "series_size_MB": "total size of this version of the series in megabytes",
-        "series_aws_url": "public AWS S3 URL to download this version of the series in bulk "
-        "(each instance is a separate file)",
-        "aws_bucket": "name of the AWS S3 bucket that contains this version of the series",
-        "min_idc_version": "first IDC release (as an integer) in this row's range: this "
-        "version, in this storage bucket, was served from this release on",
-        "max_idc_version": "last IDC release (as an integer) in this row's range. The next "
-        "release revised the series, removed it, or moved this version to another storage "
-        "bucket (which starts a new row)",
-    },
-}
-
 # A handful of columns per table surfaced by list_tables, so a caller learns they exist without
 # having to call get_table_schema first (a caller that guesses the obvious columns right never
 # does). Not a full listing; names absent from a table's schema are dropped.
@@ -272,8 +225,7 @@ NOTABLE_COLUMNS: dict[str, list[str]] = {
 def table_schema(table: str) -> dict:
     """Return ``{name, description, columns:[{name,type,description}]}`` for a table,
     sourced from the idc-index schema JSON shipped in INDEX_METADATA (table descriptions may be
-    repointed inward via ``TABLE_DESCRIPTION_OVERRIDES``; empty descriptions are filled from
-    ``TABLE_DESCRIPTION_FILLINS`` / ``COLUMN_DESCRIPTION_FILLINS``)."""
+    repointed inward via ``TABLE_DESCRIPTION_OVERRIDES``)."""
     meta = idc_index_data.INDEX_METADATA[metadata_key(table)]
     schema = meta.get("schema", {}) or {}
     cols = schema.get("columns", [])
@@ -281,12 +233,11 @@ def table_schema(table: str) -> dict:
     struct_types = (
         _parquet_column_types(table) if any(c.get("type") == "RECORD" for c in cols) else {}
     )
-    fillins = COLUMN_DESCRIPTION_FILLINS.get(table, {})
     columns = [
         {
             "name": c["name"],
             "type": _column_type(c, struct_types),
-            "description": c.get("description", "") or fillins.get(c["name"], ""),
+            "description": c.get("description", "") or "",
         }
         for c in cols
     ]
@@ -294,7 +245,7 @@ def table_schema(table: str) -> dict:
         "name": table,
         "description": TABLE_DESCRIPTION_OVERRIDES.get(table)
         or schema.get("table_description", "")
-        or TABLE_DESCRIPTION_FILLINS.get(table, ""),
+        or "",
         "columns": columns,
     }
 

@@ -41,16 +41,15 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ### Changed
 
-- **`idc-index` 0.13.3 / `idc-index-data` 25.0.4** (still IDC v25): a missing value in
+- **`idc-index` 0.13.4 / `idc-index-data` 25.0.5** (still IDC v25): a missing value in
   `index.PatientAge`, `index.SeriesDescription`, `pt_index.SeriesType`,
   `collections_index.supporting_data` or `clinical_index.column_label` is now NULL, never an empty
   string, so SQL that tested `= ''` must test `IS NULL`. `volume_geometry_index` adds
   `origin_patient`, `ImageOrientationPatient` and `slice_spacing_mm`. `GET /v3/version` and
-  `get_idc_version` report `idc_index_data_version` `25.0.4`; collection, series, and size totals
-  are unchanged.
-- `get_table_schema` / `list_tables` describe `prior_versions_index` and all its columns, which
-  upstream ships empty through `idc-index-data` 25.0.4. The description says it is not a record
-  of what is new: a row also ends when a version only moved storage bucket.
+  `get_idc_version` report `idc_index_data_version` `25.0.5`; collection, series, and size totals
+  are unchanged. `prior_versions_index` now has a table description and column descriptions,
+  which say it is not a record of what is new: a row also ends when a version only moved storage
+  bucket.
 
 ### Fixed
 

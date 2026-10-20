@@ -389,7 +389,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
                                 "summary": "Illustrative — not live values",
                                 "value": {
                                     "idc_version": "v25",
-                                    "idc_index_data_version": "25.0.4",
+                                    "idc_index_data_version": "25.0.5",
                                     "api_version": "3.0.0",
                                     "build": "a1b2c3d",
                                 },

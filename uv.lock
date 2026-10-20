@@ -543,7 +543,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.5.5" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "idc-index", specifier = "==0.13.3" },
+    { name = "idc-index", specifier = "==0.13.4" },
     { name = "mcp", specifier = ">=1.29.0,<2" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7" },
     { name = "pyarrow", specifier = ">=25.0.0" },
@@ -558,7 +558,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "idc-index"
-version = "0.13.3"
+version = "0.13.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -573,18 +573,18 @@ dependencies = [
     { name = "s5cmd" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/00/b15559ff69a11dc38ebd7b0c1bb433a1949b0c5f5472e60a7dec7f5b505b/idc_index-0.13.3.tar.gz", hash = "sha256:ea5c420ab65c026ff298f0c1c1234c2a56f40edff6f35094b772fa13a70b7180", size = 65167, upload-time = "2026-10-19T20:25:42.885Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/b1/5502b2f13928b92ab420d23931d78b52f7d9fb0e466672d31b3b2ee54aa6/idc_index-0.13.4.tar.gz", hash = "sha256:1f606b663a45fb1125a5ae56228375c37f62d323b0e51b3aa85713174c3b6d98", size = 65869, upload-time = "2026-10-20T02:24:25.451Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/09/aefa662061248a462f5dfbaa9a690b5e2ae223052ed4888c323ee34fe2b9/idc_index-0.13.3-py3-none-any.whl", hash = "sha256:13132f53788c7a28f65c041679c50cf3460532eb460f780b2974e5d43358dd91", size = 31219, upload-time = "2026-10-19T20:25:41.501Z" },
+    { url = "https://files.pythonhosted.org/packages/74/fd/066cf77cf1740d037538eead0066f2a5577d6c2b8b51358565641517a6b2/idc_index-0.13.4-py3-none-any.whl", hash = "sha256:dce52b945e1874c06c50ec22b86888332173cf6b84975e17b555237a87abb2f2", size = 31220, upload-time = "2026-10-20T02:24:24.14Z" },
 ]
 
 [[package]]
 name = "idc-index-data"
-version = "25.0.4"
+version = "25.0.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d4/f5/2c8de62a18c1217da9658706705d05f971429390e6e72461045823f37f4e/idc_index_data-25.0.4.tar.gz", hash = "sha256:4e67517d30074ed77d30ba2cc09c8ca26a56d985b3a8487ad828e445d7ecc04b", size = 79260358, upload-time = "2026-10-19T19:13:20.401Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/61/87147ca0cfff3bb1ba006dd19b27b63ea37844d77785ecf23eba8fb3e2ad/idc_index_data-25.0.5.tar.gz", hash = "sha256:a7ac0f81f995dc3880cc9c9825afeb4b26afa0e2c32290b3f0255cc1d855ae4a", size = 79225036, upload-time = "2026-10-20T01:28:42.187Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/b1/85df4c3c6a2360090b7c39455f0647e17960ed35d8b8685177847d2ccecf/idc_index_data-25.0.4-py3-none-any.whl", hash = "sha256:37292b2225b3c96feaed84dec0957ce094d30ed3b0d3a290f6e09d8f7b37eab3", size = 79222881, upload-time = "2026-10-19T19:13:15.165Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/10/c6391b44d1b2f6c744e1cb4018250cb1a5d80947d47ed945172d9165a3b4/idc_index_data-25.0.5-py3-none-any.whl", hash = "sha256:1ea4ec812688759b71798249b6488eb2bce7178aabb3dccb00366b7a555de25c", size = 79186941, upload-time = "2026-10-20T01:28:38.372Z" },
 ]
 
 [[package]]

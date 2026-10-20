@@ -15,5 +15,5 @@ def mb_to_tb(mb: float) -> float:
 
 def served_idc_release() -> int:
     """The IDC data release this server serves: the major version of the pinned
-    ``idc-index-data`` (25.0.4 → 25)."""
+    ``idc-index-data`` (25.0.5 → 25)."""
     return int(idc_index_data.__version__.split(".")[0])
