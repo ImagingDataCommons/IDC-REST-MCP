@@ -268,7 +268,7 @@ def get_stats() -> dict:
 def get_release_changes(version: int | str | None = None) -> dict:
     """What's new in an IDC data release — what changed since the previous version. Returns the
     series added, revised, and removed (with size in TB and patients affected), the collections
-    that were newly added, updated, or removed, and the analysis results that gained series.
+    that were newly added, updated, or removed, and the analysis results with changed series.
     `version` is the release, as 24 or "v24" (the form get_idc_version and `previous_version`
     use); omit it for the release this server serves. Call this whenever the user asks what is
     new, added, changed, updated, or removed in IDC, in a given release, or since a version — do

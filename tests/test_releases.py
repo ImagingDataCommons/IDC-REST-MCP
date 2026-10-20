@@ -171,7 +171,7 @@ async def test_whats_new_prompt():
     assert "whats_new" in prompts
     msg = await mcp.get_prompt("whats_new", {"version": "v24"})
     assert "get_release_changes(version=24)" in msg.messages[0].content.text
-    # Unparseable input falls back to the served release instead of reaching the call.
+    # Unparsable input falls back to the served release instead of reaching the call.
     msg = await mcp.get_prompt("whats_new", {"version": "latest"})
     assert "get_release_changes()" in msg.messages[0].content.text
 

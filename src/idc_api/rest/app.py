@@ -456,7 +456,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
     ):
         """What's new in an IDC data release relative to the previous one: series added,
         revised, and removed (with size in TB and patients affected), collections that were
-        newly added, updated, or removed, and analysis results that gained series. Computed from
+        newly added, updated, or removed, and analysis results with changed series. Computed from
         the served release's own tables (`index` plus `prior_versions_index`), so any past
         release can be described, not just the latest."""
         return C().releases.release_changes(version)
