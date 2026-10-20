@@ -59,8 +59,10 @@ _JOINED = """
 # per series; only prior_versions_index needs collapsing to one row per series and release (its
 # rows for one release share a crdc_series_uuid). `analysis_result_id` of a version no longer
 # served comes from the series' current row, so it is NULL for removed series.
-_DIFF_SQL = f"""
-WITH params AS (SELECT ?::INTEGER AS served, ?::INTEGER AS n),
+# Interpolates only the constant fragments above; the two values are bound.
+_DIFF_SQL = (
+    "WITH params AS (SELECT ?::INTEGER AS served, ?::INTEGER AS n),"  # nosec B608
+    f"""
 rel AS (SELECT n AS r FROM params UNION ALL SELECT n - 1 FROM params),
 versions AS (
   SELECT r, SeriesInstanceUID, collection_id, PatientID, analysis_result_id, crdc_series_uuid,
@@ -89,6 +91,7 @@ UNION ALL
 SELECT 'analysis_result', analysis_result_id, {_AGGS} FROM by_collection
 WHERE analysis_result_id IS NOT NULL GROUP BY analysis_result_id
 """
+)
 
 _NOTE = (
     "Computed from the current release: series in `index` plus the series versions no longer "
