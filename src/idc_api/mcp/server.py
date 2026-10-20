@@ -272,10 +272,12 @@ def get_release_changes(version: int | str | None = None) -> dict:
     `version` is the release, as 24 or "v24" (the form get_idc_version and `previous_version`
     use); omit it for the release this server serves. Call this whenever the user asks what is
     new, added, changed, updated, or removed in IDC, in a given release, or since a version — do
-    not conclude that history is unavailable because the server serves a single release, and do
-    not work it out from `prior_versions_index` row ranges (a row also ends when a series only
-    moved storage bucket). Surface any `warnings`. For per-series detail beyond this summary,
-    use run_sql on `index` (series_init_idc_version / series_revised_idc_version)."""
+    not conclude that history is unavailable because the server serves a single release.
+    Surface any `warnings`. For per-series detail beyond this summary, use run_sql: `index`
+    (series_init_idc_version / series_revised_idc_version) covers the series still served;
+    removed series and earlier versions of revised ones are only in `prior_versions_index`.
+    Compare releases there by membership and crdc_series_uuid, never by its row ranges (a row
+    also ends when a series only moved storage bucket)."""
     return ctx.releases.release_changes(version).model_dump(mode="json")
 
 
@@ -675,11 +677,15 @@ all earlier ones. On `index`, `series_init_idc_version` is the release a series 
 and `series_revised_idc_version` the release its current content dates from; `version_metadata_index`
 dates each release. For "what's new in vN", call `get_release_changes(version=N)`: it diffs
 release N against N-1 — series added / revised / removed, new and removed collections,
-per-collection size. For per-series detail use `run_sql` on the two `index` columns (e.g. "which
-of my cohort's series changed since v20": `series_revised_idc_version > 20`).
-`prior_versions_index` lists the series versions no longer served (for resolving old manifests).
-It is not a record of what is new: it never lists added series, and a row also ends when a
-version only moved storage bucket, so do not count changes from its `max_idc_version`.
+per-collection size. For per-series detail of the series still served, use `run_sql` on the two
+`index` columns (e.g. "which of my cohort's series changed since v20":
+`series_revised_idc_version > 20`). Removed series and earlier versions of revised ones are only
+in `prior_versions_index`, which lists the series versions no longer served (it also resolves old
+manifests). It is not a record of what is new: it never lists added series, and a row also ends
+when a version only moved storage bucket, so do not count changes from its `max_idc_version`. To
+compare releases N-1 and N per series, build each from both tables (an `index` row is in release
+R when `series_revised_idc_version <= R`, a `prior_versions_index` row when
+`min_idc_version <= R <= max_idc_version`) and compare membership and `crdc_series_uuid`.
 """
 
 

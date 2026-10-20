@@ -96,9 +96,11 @@ WHERE analysis_result_id IS NOT NULL GROUP BY analysis_result_id
 _NOTE = (
     "Computed from the current release: series in `index` plus the series versions no longer "
     "served in `prior_versions_index`. 'revised' means the series is in both releases with "
-    "different content (a new crdc_series_uuid). Do not derive changes from "
-    "prior_versions_index row ranges: a row also ends when a version only moved storage bucket. "
-    "For per-series detail, use series_init_idc_version / series_revised_idc_version on `index`."
+    "different content (a new crdc_series_uuid). For per-series detail, series_init_idc_version "
+    "/ series_revised_idc_version on `index` cover the series still served; removed series and "
+    "earlier versions of revised ones are only in prior_versions_index. Compare releases there "
+    "by membership and crdc_series_uuid, not by row ranges: a row also ends when a version only "
+    "moved storage bucket."
 )
 
 
@@ -106,7 +108,8 @@ def parse_idc_version(version: int | str) -> int:
     """An IDC release number from ``24``, ``"24"`` or ``"v24"``; raises InvalidQueryError
     otherwise."""
     s = str(version).strip().lower().removeprefix("v")
-    if not (s.isascii() and s.isdigit()):
+    # The length cap keeps int() off digit strings it refuses to convert (over 4,300 digits).
+    if not (s.isascii() and s.isdigit() and len(s) <= 4):
         raise InvalidQueryError(f"Invalid IDC version: {version!r}. Use a release such as 24.")
     return int(s)
 

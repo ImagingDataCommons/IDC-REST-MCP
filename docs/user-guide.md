@@ -252,9 +252,10 @@ from one and added to the other in the per-collection rows, but not in the total
 and v2 carry a `warnings` entry: series versions served in v1 and replaced later were never
 recorded, so those two diffs are incomplete.
 
-For per-series detail, query `index` with SQL: `series_init_idc_version` is the release a series
-first appeared in, and `series_revised_idc_version` the release its current content dates from.
-For example, the series of a collection that changed since v20:
+For per-series detail of the series still served, query `index` with SQL:
+`series_init_idc_version` is the release a series first appeared in, and
+`series_revised_idc_version` the release its current content dates from. For example, the series
+of a collection that changed since v20:
 
 ```sql
 SELECT SeriesInstanceUID, series_init_idc_version, series_revised_idc_version
@@ -266,8 +267,13 @@ WHERE collection_id = 'nlst' AND series_revised_idc_version > 20
 earlier releases can still be resolved. It is **not** a record of what is new: it never lists
 added series, and a row also ends when a version only moved storage bucket, so counting rows by
 `max_idc_version` overstates revisions (for v20 it would count 11,928, of which 11,338 were
-bucket moves).
-`get_release_changes` accounts for this.
+bucket moves). `get_release_changes` accounts for this.
+
+Removed series, and earlier versions of revised ones, are only in `prior_versions_index`. To
+compare two releases series by series, build each release from both tables (an `index` row is in
+release R when `series_revised_idc_version <= R`, a `prior_versions_index` row when
+`min_idc_version <= R <= max_idc_version`), then compare which series are present and, for those
+in both, their `crdc_series_uuid`.
 
 The diff tells you *what* changed, not *why*; for the narrative, see the
 [IDC release notes](https://learn.canceridc.dev/data/data-release-notes).

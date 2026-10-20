@@ -125,7 +125,8 @@ def test_version_accepts_v_prefix(ctx):
     assert ctx.releases.release_changes(f"v{cur}") == ctx.releases.release_changes(cur)
 
 
-@pytest.mark.parametrize("bad", [0, 9999, "latest", "v", "²", "v-1"])
+# "9" * 5000 is past the digit count int() will convert from a string.
+@pytest.mark.parametrize("bad", [0, 9999, "latest", "v", "²", "v-1", "9" * 5000])
 def test_unknown_version_is_a_clean_error(ctx, bad):
     with pytest.raises(InvalidQueryError):
         ctx.releases.release_changes(bad)
@@ -148,7 +149,7 @@ async def test_both_adapters_accept_the_version_they_return(ctx, client, parse_m
     assert mcp_out["idc_version"] == prev
 
 
-@pytest.mark.parametrize("bad", [9999, "latest", "²"])
+@pytest.mark.parametrize("bad", [9999, "latest", "²", "9" * 5000])
 def test_rest_bad_version_is_400(client, bad):
     r = client.get("/v3/releases/changes", params={"version": bad})
     assert r.status_code == 400
@@ -173,6 +174,8 @@ async def test_whats_new_prompt():
     assert "get_release_changes(version=24)" in msg.messages[0].content.text
     # Unparsable input falls back to the served release instead of reaching the call.
     msg = await mcp.get_prompt("whats_new", {"version": "latest"})
+    assert "get_release_changes()" in msg.messages[0].content.text
+    msg = await mcp.get_prompt("whats_new", {"version": "9" * 5000})
     assert "get_release_changes()" in msg.messages[0].content.text
 
 
