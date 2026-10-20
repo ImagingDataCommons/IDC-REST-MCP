@@ -13,6 +13,13 @@ Refactors, CI, and formatting land in the git history, not here.
 
 ## [Unreleased]
 
+## [3.0.0b7] — 2026-10-19
+
+Beta iteration: adds release history (`get_release_changes`), cohort filters that exclude or
+isolate analysis results, and bound `params` for SQL, and picks up `idc-index-data` 25.0.5. Still
+IDC v25. REST and MCP changes are additive, but SQL that tested a missing value with `= ''` must
+now test `IS NULL`.
+
 ### Added
 
 - `POST /v3/sql` and the MCP `run_sql` tool take `params`, bound to `?` placeholders in the
@@ -206,7 +213,8 @@ served by a different backend and v3 lives only under `/v3/*`.
   (NCI security policy). Max-age is configurable via `IDC_API_HSTS_MAX_AGE` — default one year;
   dev/test deploys use 3600.
 
-[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b6...HEAD
+[Unreleased]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b7...HEAD
+[3.0.0b7]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b6...v3.0.0b7
 [3.0.0b6]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b5...v3.0.0b6
 [3.0.0b5]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b4...v3.0.0b5
 [3.0.0b4]: https://github.com/ImagingDataCommons/IDC-REST-MCP/compare/v3.0.0b3...v3.0.0b4

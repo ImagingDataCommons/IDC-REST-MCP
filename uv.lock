@@ -514,7 +514,7 @@ wheels = [
 
 [[package]]
 name = "idc-api"
-version = "3.0.0b6"
+version = "3.0.0b7"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
