@@ -160,7 +160,7 @@ python3 dev/smoke_openapi_examples.py "$URL"
 The image installs dependencies from [uv.lock](../uv.lock) (see [Dockerfile](../Dockerfile)), so
 it bakes exactly the `idc-index-data` the lock records and a rebuild of the same commit is
 deterministic. To move IDC versions, bump the exact `idc-index` pin in
-[pyproject.toml](../pyproject.toml) (e.g. `idc-index==0.13.3`, which pulls a specific
+[pyproject.toml](../pyproject.toml) (e.g. `idc-index==0.13.4`, which pulls a specific
 `idc-index-data`), run `uv lock` and commit both files — CI's `uv sync --locked` fails if the lock
 is stale — then **rebuild and redeploy** (steps 2–3). The running version is always reported at
 `/v3/version`.

@@ -193,6 +193,33 @@ TABLE_DESCRIPTION_OVERRIDES: dict[str, str] = {
     ),
 }
 
+# A handful of columns per table surfaced by list_tables, so a caller learns they exist without
+# having to call get_table_schema first (a caller that guesses the obvious columns right never
+# does). Not a full listing; names absent from a table's schema are dropped.
+NOTABLE_COLUMNS: dict[str, list[str]] = {
+    "index": [
+        "collection_id",
+        "analysis_result_id",
+        "PatientID",
+        "SeriesInstanceUID",
+        "Modality",
+        "BodyPartExamined",
+        "SeriesDescription",
+        "license_short_name",
+        "series_size_MB",
+        "series_init_idc_version",
+        "series_revised_idc_version",
+    ],
+    "version_metadata_index": ["idc_version", "version_timestamp"],
+    "prior_versions_index": [
+        "SeriesInstanceUID",
+        "crdc_series_uuid",
+        "min_idc_version",
+        "max_idc_version",
+    ],
+    "seg_index": ["segmented_SeriesInstanceUID", "SegmentedPropertyType_CodeMeanings"],
+}
+
 
 @lru_cache(maxsize=None)
 def table_schema(table: str) -> dict:

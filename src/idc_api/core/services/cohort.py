@@ -12,8 +12,8 @@ from ..models import (
     SeriesManifestRow,
 )
 from .manifest import ManifestService
+from ._common import mb_to_tb
 
-_MB_PER_TB = 1_000_000
 
 _ROW_COLUMNS = [
     "collection_id",
@@ -55,7 +55,7 @@ class CohortService:
             studies=row["studies"],
             series=row["series"],
             instances=int(row["instances"]),
-            size_TB=round(row["size_mb"] / _MB_PER_TB, 3),
+            size_TB=mb_to_tb(row["size_mb"]),
             # Echo the effective filter so a caller can tell an empty cohort apart from a
             # dropped filter without guessing from the magnitude of the numbers.
             filters_applied=f.applied,

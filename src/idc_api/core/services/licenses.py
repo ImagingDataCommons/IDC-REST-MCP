@@ -5,8 +5,7 @@ from __future__ import annotations
 from ..backend.base import QueryBackend
 from ..filters import compile_filters
 from ..models import CohortFilters, LicenseItem, LicensesResult
-
-_MB_PER_TB = 1_000_000
+from ._common import mb_to_tb
 
 
 class LicenseService:
@@ -27,7 +26,7 @@ class LicenseService:
                 LicenseItem(
                     license_short_name=r["license_short_name"],
                     series=r["series"],
-                    size_TB=round(r["size_mb"] / _MB_PER_TB, 3),
+                    size_TB=mb_to_tb(r["size_mb"]),
                 )
                 for r in rows
             ],

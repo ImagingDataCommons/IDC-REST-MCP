@@ -29,16 +29,27 @@ Refactors, CI, and formatting land in the git history, not here.
   `analysis_result_id` values, as it already did for `collection_id`.
 - `get_attribute_values` / `GET /v3/attributes/{attribute}/values` return `null_count`, the
   number of series with no value, which `values` does not list.
+- `GET /v3/releases/changes?version=N` and the MCP tool `get_release_changes(version)` describe
+  what changed in IDC release N (`24` or `v24`; default the served release) against N-1: series
+  added, revised and removed with TB and patients affected, new, updated and removed collections,
+  and analysis results with changed series. Any past release is covered, computed from the served
+  release's tables; v1 and v2 carry a `warnings` entry, since v1 is only partly recorded
+  ([#40](https://github.com/ImagingDataCommons/IDC-REST-MCP/issues/40)).
+- MCP prompt `whats_new` (optional `version`) asks for a summary of a release.
+- `GET /v3/tables` / `list_tables` give each table a few `notable_columns`, such as
+  `series_init_idc_version` on `index`.
 
 ### Changed
 
-- **`idc-index` 0.13.3 / `idc-index-data` 25.0.4** (still IDC v25): a missing value in
+- **`idc-index` 0.13.4 / `idc-index-data` 25.0.5** (still IDC v25): a missing value in
   `index.PatientAge`, `index.SeriesDescription`, `pt_index.SeriesType`,
   `collections_index.supporting_data` or `clinical_index.column_label` is now NULL, never an empty
   string, so SQL that tested `= ''` must test `IS NULL`. `volume_geometry_index` adds
   `origin_patient`, `ImageOrientationPatient` and `slice_spacing_mm`. `GET /v3/version` and
-  `get_idc_version` report `idc_index_data_version` `25.0.4`; collection, series, and size totals
-  are unchanged.
+  `get_idc_version` report `idc_index_data_version` `25.0.5`; collection, series, and size totals
+  are unchanged. `prior_versions_index` now has a table description and column descriptions,
+  which say it is not a record of what is new: a row also ends when a version only moved storage
+  bucket.
 
 ### Fixed
 
