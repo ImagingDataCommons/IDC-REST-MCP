@@ -42,7 +42,8 @@ them — in NLST, about two thirds of the series are analysis results (IDC v25).
 original data only, or `only` for analysis results only.
 
 The main queryable table is **`index`** — one row per **series**, the unit you filter, count,
-and download. IDC is large (~100+ TB total), so always check counts/size before downloading.
+and download. IDC is large (~100+ TB total), so always check counts/size before downloading:
+downloads are free (see [§4](#4-getting-the-data)), but transfer time and disk space are not.
 
 ### The query surfaces, and how they relate
 
@@ -530,8 +531,15 @@ rationale) is in [deployment.md](../dev/deployment.md).
 **Get a manifest, then pull the files directly from S3/GCS.** All series URLs point at
 **public AWS S3 and GCS buckets — no credentials needed** — so the transfer never goes through
 the API server (the server never moves bytes; retrieval always means URLs/manifests), works
-the same against the hosted or a local instance, and scales to whole collections. Two ways to
-do it:
+the same against the hosted or a local instance, and scales to whole collections.
+
+**Downloading is free.** IDC's buckets are hosted through the Google Public Data Program and
+the AWS Open Data Sponsorship Program, which
+[cover egress fees](https://learn.canceridc.dev/data/organization-of-data/files-and-metadata),
+so you are never billed for pulling IDC data — whether it lands on a laptop, an on-premises
+cluster, or a cloud VM. You need neither a cloud account nor a billing project.
+
+There are two ways to download:
 
 1. **Whole collection or analysis result** — the simplest path; `cohort/manifest`'s download
    payload emits it for you when your filter is only `collection_id` values, or only

@@ -60,9 +60,10 @@ Work this way:
    (non-imaging) attributes — staging, demographics, therapy — use list_clinical_tables, then
    get_clinical_table_schema / get_clinical_table to read the rows (or run_sql against
    `clinical.<table>`).
-3. IDC is large (100+ TB) — always report counts/size_TB and warn before any download. To get
-   data, use get_cohort_urls / the returned `idc` commands — direct S3/GCS transfer from public
-   buckets, no server involved.
+3. IDC is large (100+ TB) — always report counts/size_TB and warn before any download, about
+   transfer time and disk space, not cost: downloads are free (no egress fees). To get data, use
+   get_cohort_urls / the returned `idc` commands — direct S3/GCS transfer from public buckets,
+   no server involved.
 4. Trust `filters_applied`, not your intent: surface any `warnings` a result carries, and treat
    an empty `filters_applied` as the whole archive rather than a cohort.
 5. For "what's new / what changed in release N", call get_release_changes — release history is
@@ -471,7 +472,7 @@ def get_cohort_urls(
     both return s3:// URLs (GCS is reached via its S3-compatible endpoint, same bucket name for
     almost every series; this matches idc-index, and is why `idc download-from-manifest` only
     ever expects s3:// lines). Returns up to `limit` URLs (increase for full manifests). These
-    are anonymous public URLs — easiest is the `idc` CLI (handles either cloud); driving it
+    are anonymous public URLs, free to download (no egress fees) — easiest is the `idc` CLI (handles either cloud); driving it
     yourself, `s5cmd --no-sign-request` works directly for source=aws, and for source=gcs add
     `--endpoint-url https://storage.googleapis.com`. `terms`, `ranges` and `analysis_results`
     filter as in build_cohort. At least one filter predicate is required: unfiltered, this would
@@ -571,7 +572,8 @@ derived dataset — segmentations/annotations — that can span *multiple* colle
 not nested under one). An analysis result's series carry the `collection_id` of the images they
 analyze, so a `collection_id` filter returns original data *and* analysis results; original
 data has a NULL `analysis_result_id`. The main table is `index` (one row per *series*). IDC is
-large (~100+ TB) — always check size before suggesting a download.
+large (~100+ TB) — always check size before suggesting a download: downloading is free, but
+transfer time and disk space are not.
 
 **The tools form a few families that build on each other:**
 - *Discovery* (`get_stats`, `list_collections`, `get_collection`, `list_analysis_results`,
@@ -630,6 +632,10 @@ its payload — so a typical request flows Discovery → Cohort → Retrieval, w
    transfer directly from S3/GCS with no server involved, and work the same whether this
    server is hosted or local.
    This server never moves files itself; hand the user the commands/URLs to run.
+   *Downloading is free:* the buckets are hosted through the Google Public Data Program and
+   the AWS Open Data Sponsorship Program, which cover egress fees — the user is never billed,
+   needs no cloud account, and pays nothing whether the data goes to a laptop or a cloud VM.
+   If a user worries about cost, say so; the reason to check size first is time and disk.
 5. *Be a good citizen:* check `get_licenses` (CC BY vs CC BY-NC) and, when publishing, include
    `get_citations` output — both the per-dataset `citations` and `idc_acknowledgment` (the IDC
    paper, https://doi.org/10.1148/rg.230180) to acknowledge IDC itself.
