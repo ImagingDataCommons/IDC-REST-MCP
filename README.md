@@ -1,6 +1,8 @@
 # IDC REST API & MCP Server
 
 [![CI](https://github.com/ImagingDataCommons/IDC-REST-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/ImagingDataCommons/IDC-REST-MCP/actions/workflows/ci.yml)
+[![Deployed](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.imaging.datacommons.cancer.gov%2Fv3%2Fversion&query=%24.api_version&label=deployed&prefix=v&color=blue)](https://api.imaging.datacommons.cancer.gov/v3/version)
+[![IDC data](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.imaging.datacommons.cancer.gov%2Fv3%2Fversion&query=%24.idc_version&label=IDC%20data&color=blue)](https://api.imaging.datacommons.cancer.gov/v3/version)
 
 LLM-first **REST API** and **MCP server** for the [NCI Imaging Data Commons (IDC)](https://imaging.datacommons.cancer.gov/),
 backed by the [`idc-index`](https://github.com/ImagingDataCommons/idc-index) Parquet index
